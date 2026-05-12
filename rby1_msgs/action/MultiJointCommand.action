@@ -1,0 +1,10 @@
+float64[] torso
+float64[] right_arm
+float64[] left_arm
+float64[] head
+float64 minimum_time
+---
+bool success
+string finish_code
+---
+string current_state

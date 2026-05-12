@@ -1,0 +1,24 @@
+# FT Sensor Data (FTSensorData struct in SDK)
+float64[3] ft_force_left
+float64[3] ft_torque_left
+float64[3] ft_force_right
+float64[3] ft_torque_right
+
+# Tool Flange Data (ToolFlangeState struct in SDK)
+float64[3] tool_flange_left_gyro
+float64[3] tool_flange_left_acceleration
+bool tool_flange_left_switch_a
+int32 tool_flange_left_output_voltage
+bool tool_flange_left_digital_input_a
+bool tool_flange_left_digital_input_b
+bool tool_flange_left_digital_output_a
+bool tool_flange_left_digital_output_b
+
+float64[3] tool_flange_right_gyro
+float64[3] tool_flange_right_acceleration
+bool tool_flange_right_switch_a
+int32 tool_flange_right_output_voltage
+bool tool_flange_right_digital_input_a
+bool tool_flange_right_digital_input_b
+bool tool_flange_right_digital_output_a
+bool tool_flange_right_digital_output_b

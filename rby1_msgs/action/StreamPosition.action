@@ -1,0 +1,6 @@
+trajectory_msgs/JointTrajectory trajectory
+---
+bool success
+string finish_code
+---
+string current_state
