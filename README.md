@@ -28,6 +28,14 @@ cb
 ## Examples
 `rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
 
+### joint control
+- 해당 예제는 일반적인 joint position 예제에 대하여 
+```bash
+ros2 run rby1_examples joint_control_example
+```
+
+
+
 - **기본 위치 제어**: `ros2 run rby1_examples single_joint`, `multi_joint`
 - **카테시안 제어**: `ros2 run rby1_examples cartesian_control`
 - **임피던스 제어**: `ros2 run rby1_examples joint_impedance`, `cartesian_impedance`
