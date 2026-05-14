@@ -1,9 +1,19 @@
-# RBY1 ROS 2 Driver Package
+1# RBY1 ROS 2 Driver Package
 
 ## 개요
 `rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
 
 ## 주요 기능 (Key Features)
+
+### 기본 사용방식
+1. 통신액션,서비스 선언
+2. 로봇 전원, 서보키는 서비스통신 진행 : 이미 켜져있으면 드라이버 내부에서 알아서 처리함. 안켜진거 있으면 그것만 on/off
+3. 사용할 제어기 설정 후 서비스통신을 통해 전송 : 기본값으로는 joint position제어로 되어있음
+    - 제어기 설정시, 필요한 파라미터는 기입해줘야 함. 값이 누락되면 기본값으로 사용되도록 설정되어있음
+    - [제어기종류 및 필요변수 매뉴얼에 추가할 예정] 
+4. 하나의 파트(left_arm, right_arm, torso, head)만 액션으로 보내거나, 모든 데이터를 한번에 보내기 가능
+   - 조인트 : 각도 rad 값
+   - 카타시안 : 4*4행렬의 요소를 16크기의 배열로 나열한 행렬
 
 ### 1. 로봇 제어 (Advanced Control)
 - **Joint Control**: 각 부위별(Torso, Arm, Head) 또는 전신(Multi-joint)의 관절 위치를 개별적으로 제어할 수 있습니다.
