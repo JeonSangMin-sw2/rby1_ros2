@@ -3,6 +3,29 @@
 ## 개요
 `rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
 
+
+
+## install ros2 humble
+[ros2 설치링크 추가할 예정]
+
+## additional setting[추가중]
+```bash
+sudo nano ~/.bashrc
+# 내용 아래에 해당 커맨드 추가
+alias cb='colcon build --symlink'
+alias cbp='colcon build --select-package --symlink'
+alias si='source install/setup.bash'
+```
+
+## how to build[추가중]
+```bash
+mkdir rby1_ros2_ws/src
+cd rby1_ros2_ws/src
+git clone
+cd ..
+cb
+```
+
 ## 주요 기능 (Key Features)
 
 ### 기본 사용방식
