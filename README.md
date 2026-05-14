@@ -12,19 +12,42 @@
 ```bash
 sudo nano ~/.bashrc
 # 내용 아래에 해당 커맨드 추가
-alias cb='colcon build --symlink'
-alias cbp='colcon build --select-package --symlink'
+alias cb='colcon build --symlink-install'
+alias cbp='colcon build --symlink-install --packages-select'
 alias si='source install/setup.bash'
 ```
 
-## how to build[추가중]
+## how to build
 ```bash
 mkdir rby1_ros2_ws/src
 cd rby1_ros2_ws/src
-git clone
+git clone https://github.com/RainbowRobotics/rby1_ros2.git
 cd ..
 cb
 ```
+## Examples
+`rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
+
+- **기본 위치 제어**: `ros2 run rby1_examples single_joint`, `multi_joint`
+- **카테시안 제어**: `ros2 run rby1_examples cartesian_control`
+- **임피던스 제어**: `ros2 run rby1_examples joint_impedance`, `cartesian_impedance`
+- **중력 보상**: `ros2 run rby1_examples multi_controls` (Zero Gravity 설정 포함)
+- **궤적 스트리밍**: `ros2 run rby1_examples stream_joint_control`
+- **상태 모니터링**: `ros2 run rby1_examples state_monitoring`
+
+
+
+
+## 패키지 구성 및 역할
+
+| 패키지 | 역할 |
+|---|---|
+| `rby1_driver` | C++ 기반의 메인 드라이버 노드. RBY1 SDK를 통해 실제 로봇과 통신하며 ROS 2 인터페이스를 제공합니다. |
+| `rby1_msgs` | 로봇 제어 및 상태 확인에 필요한 커스텀 메시지, 서비스, 액션 정의를 포함합니다. |
+| `rby1_examples` | 드라이버 기능을 활용하는 파이썬 기반의 다양한 제어 예제 코드를 제공합니다. |
+
+---
+
 
 ## 주요 기능 (Key Features)
 
@@ -56,15 +79,7 @@ cb
 - **Tool Flange I/O**: 툴 플랜지의 출력 전압(12V/24V) 설정 및 디지털 입출력 상태 확인 기능을 제공합니다.
 - **Fault Management**: 하드웨어 또는 제어 폴트 발생 시 소프트웨어적인 리셋 및 복구 기능을 지원합니다.
 
-## 패키지 구성 및 역할
 
-| 패키지 | 역할 |
-|---|---|
-| `rby1_driver` | C++ 기반의 메인 드라이버 노드. RBY1 SDK를 통해 실제 로봇과 통신하며 ROS 2 인터페이스를 제공합니다. |
-| `rby1_msgs` | 로봇 제어 및 상태 확인에 필요한 커스텀 메시지, 서비스, 액션 정의를 포함합니다. |
-| `rby1_examples` | 드라이버 기능을 활용하는 파이썬 기반의 다양한 제어 예제 코드를 제공합니다. |
-
----
 
 ## 시스템 아키텍쳐
 본 드라이버는 RBY1 SDK를 ROS 2 노드로 래핑(Wrapping)하는 구조로 설계되었습니다.
@@ -143,12 +158,3 @@ cb
 
 ---
 
-## 사용 방법 (Examples)
-`rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
-
-- **기본 위치 제어**: `ros2 run rby1_examples single_joint`, `multi_joint`
-- **카테시안 제어**: `ros2 run rby1_examples cartesian_control`
-- **임피던스 제어**: `ros2 run rby1_examples joint_impedance`, `cartesian_impedance`
-- **중력 보상**: `ros2 run rby1_examples multi_controls` (Zero Gravity 설정 포함)
-- **궤적 스트리밍**: `ros2 run rby1_examples stream_joint_control`
-- **상태 모니터링**: `ros2 run rby1_examples state_monitoring`
