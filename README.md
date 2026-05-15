@@ -27,15 +27,20 @@ cb
 ```
 ## Examples
 `rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
-
-### joint control
-- 해당 예제는 일반적인 joint position 예제에 대하여 
+- 구동방식
 ```bash
 ros2 run rby1_examples joint_control_example
 ```
 
 
+| 패키지 | 역할 |
+|---|---|
+| `rby1_driver` | C++ 기반의 메인 드라이버 노드. RBY1 SDK를 통해 실제 로봇과 통신하며 ROS 2 인터페이스를 제공합니다. |
+| `rby1_msgs` | 로봇 제어 및 상태 확인에 필요한 커스텀 메시지, 서비스, 액션 정의를 포함합니다. |
+| `rby1_examples` | 드라이버 기능을 활용하는 파이썬 기반의 다양한 제어 예제 코드를 제공합니다. |
 
+### joint control
+- 해당 예제는 일반적인 joint position 예제에 대하여 
 - **기본 위치 제어**: `ros2 run rby1_examples single_joint`, `multi_joint`
 - **카테시안 제어**: `ros2 run rby1_examples cartesian_control`
 - **임피던스 제어**: `ros2 run rby1_examples joint_impedance`, `cartesian_impedance`
@@ -48,11 +53,24 @@ ros2 run rby1_examples joint_control_example
 
 ## 패키지 구성 및 역할
 
-| 패키지 | 역할 |
+| example | explain |
 |---|---|
-| `rby1_driver` | C++ 기반의 메인 드라이버 노드. RBY1 SDK를 통해 실제 로봇과 통신하며 ROS 2 인터페이스를 제공합니다. |
-| `rby1_msgs` | 로봇 제어 및 상태 확인에 필요한 커스텀 메시지, 서비스, 액션 정의를 포함합니다. |
-| `rby1_examples` | 드라이버 기능을 활용하는 파이썬 기반의 다양한 제어 예제 코드를 제공합니다. |
+| cancel_control | |
+| cartesian_control | |
+| cartesian_impedance |  |
+
+| joint_group| |
+| joint_impedance | |
+| multi_control |  |
+
+| multi_joint | |
+| power_control | |
+| robot_status_monitor |  |
+
+| single_joint | |
+| stream_joint_control | |
+| tool_flange_test |  |
+| zero_pose ||
 
 ---
 
