@@ -1,12 +1,15 @@
 1# RBY1 ROS 2 Driver Package
 
-## 개요
+# 개요
 `rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
 
 
-
+# Quick start
 ## install ros2 humble
 [ros2 설치링크 추가할 예정]
+
+## install rb-y1 docker
+[링크첨부예정]
 
 ## additional setting[추가중]
 ```bash
@@ -48,20 +51,7 @@ ros2 run rby1_examples joint_control_example
 | zero_pose | 로봇 zero_pose로 명령 |
 ---
 
-
-### joint control
-- 해당 예제는 일반적인 joint position 예제에 대하여 
-- **기본 위치 제어**: `ros2 run rby1_examples single_joint`, `multi_joint`
-- **카테시안 제어**: `ros2 run rby1_examples cartesian_control`
-- **임피던스 제어**: `ros2 run rby1_examples joint_impedance`, `cartesian_impedance`
-- **중력 보상**: `ros2 run rby1_examples multi_controls` (Zero Gravity 설정 포함)
-- **궤적 스트리밍**: `ros2 run rby1_examples stream_joint_control`
-- **상태 모니터링**: `ros2 run rby1_examples state_monitoring`
-
-
-
-
-## 패키지 구성 및 역할
+# 패키지 구성 및 역할
 
 | 패키지 | 역할 |
 |---|---|
