@@ -4,7 +4,7 @@
 `rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
 
 
-## Quick start
+## 1.Quick start
 
 ### install ros2 humble
 [ros2 설치링크 추가할 예정]
@@ -72,7 +72,7 @@ ros2 run rby1_examples joint_control_example
 | zero_pose | 로봇 zero_pose로 명령 |
 ---
 
-## 패키지 구성 및 역할
+## 2.패키지 구성 및 역할
 | 패키지 | 역할 |
 |---|---|
 | `rby1_driver` | C++ 기반의 메인 드라이버 노드. RBY1 SDK를 통해 실제 로봇과 통신하며 ROS 2 인터페이스를 제공합니다. |
@@ -80,19 +80,26 @@ ros2 run rby1_examples joint_control_example
 | `rby1_examples` | 드라이버 기능을 활용하는 파이썬 기반의 다양한 제어 예제 코드를 제공합니다. |
 ---
 
-
-## 주요 기능 (Key Features)
-
-### 기본 사용방식
-1. 통신액션,서비스 선언
-2. 로봇 전원, 서보키는 서비스통신 진행 : 이미 켜져있으면 드라이버 내부에서 알아서 처리함. 안켜진거 있으면 그것만 on/off
-3. 사용할 제어기 설정 후 서비스통신을 통해 전송 : 기본값으로는 joint position제어로 되어있음
+### 2-1. rby1_driver
+- 통신액션,서비스 선언
+- 로봇 전원, 서보키는 서비스통신 진행 : 이미 켜져있으면 드라이버 내부에서 알아서 처리함. 안켜진거 있으면 그것만 on/off
+- 사용할 제어기 설정 후 서비스통신을 통해 전송 : 기본값으로는 joint position제어로 되어있음
     - 제어기 설정시, 필요한 파라미터는 기입해줘야 함. 값이 누락되면 기본값으로 사용되도록 설정되어있음
-    - [제어기종류 및 필요변수 매뉴얼에 추가할 예정] 
-4. 하나의 파트(left_arm, right_arm, torso, head)만 액션으로 보내거나, 모든 데이터를 한번에 보내기 가능
+    - [제어기종류 및 필요변수 매뉴얼에 추가할 예정]
+- 하나의 파트(left_arm, right_arm, torso, head)만 액션으로 보내거나, 모든 데이터를 한번에 보내기 가능
    - 조인트 : 각도 rad 값
    - 카타시안 : 4*4행렬의 요소를 16크기의 배열로 나열한 행렬
+- 제어기 사용 시 일반적으로 left_arm,right_arm,torso,head 로 나눠서 명명
+- 따라서 각 조인트의 일부만을 제어하는 것은 불가능(torso 제외)
 
+|제어기|사용방식|
+|---|---|
+|Joint position, Joint impedance|각 조인트의 rad 값|
+|Cartesian position, Cartesian impedance|타겟 링크의 4*4행렬값(이를 16크기의 배열로 변환하여 전송)|
+|Joint group|torso 의 선택된 joint 이름과 rad 값|
+|Gravity compensation|파트의 on/off|
+|stream|ros2의 trajectory 변수를 활용한 조인트 position의 경로값|
+---
 ### 1. 로봇 제어 (Advanced Control)
 - **Joint Control**: 각 부위별(Torso, Arm, Head) 또는 전신(Multi-joint)의 관절 위치를 개별적으로 제어할 수 있습니다.
 - **Cartesian Control**: 4x4 변환 행렬을 16크기의 배열로 통신하며, 사용자가 정한 타켓 링크의 위치와 방향을 제어합니다.
@@ -137,7 +144,7 @@ ros2 run rby1_examples joint_control_example
 
 ## 통신 인터페이스 (Communication Interfaces)
 
-### 토픽 (Topics - Publishers)
+## 5.토픽 (Topics - Publishers)
 
 | 토픽 이름 | 자료형 (Message Type) | 설명 |
 |---|---|---|
