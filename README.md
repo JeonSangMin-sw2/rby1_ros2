@@ -7,15 +7,19 @@
 ## 1.Quick start
 
 ### install ros2 humble
-[ros2 설치링크 추가할 예정]
+
+https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html
 
 ### install rb-y1 docker
-[링크첨부예정]
+
+https://hub.docker.com/r/rainbowroboticsofficial/rby1-sim
 
 ### additional setting[추가중]
 ```bash
 sudo nano ~/.bashrc
 # 내용 아래에 해당 커맨드 추가
+export PATH=/opt/cmake/bin:$PATH
+source /opt/ros/humble/setup.bash
 alias cb='colcon build --symlink-install'
 alias cbp='colcon build --symlink-install --packages-select'
 alias si='source install/setup.bash'
