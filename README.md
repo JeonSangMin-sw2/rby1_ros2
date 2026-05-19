@@ -87,7 +87,7 @@ ros2 launch rby1_driver rby1_ros2_driver.launch.py
 # 별도의 터미널을 생성
 # cd your ws
 si
-ros2 run rby1_examples joint_control_example
+ros2 run rby1_examples single_joint.py # 예시
 ```
 | example | explain |
 |---|---|
