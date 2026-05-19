@@ -1,7 +1,10 @@
 # RBY1 ROS 2 Driver Package
 
 ## 개요
-`rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
+- `rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
+- 사용 버전 : ros2 humble
+- 사용 환경 : ubuntu 22.04
+- 사용가능 로봇 rpc 버전 : 0.10.x 이후
 
 
 ## 1.Quick start
