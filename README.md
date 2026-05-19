@@ -94,10 +94,12 @@ ros2 launch rby1_driver rby1_ros2_driver.launch.py
 ```
 - 드라이버는 아래 사진과 같이 실행됩니다.
 
-
 ![드라이버 구조](Doc/img/driver.png)
-  
-  
+
+- 사용자는 드라이버에 서비스 통신을 통해 각 파트(right_arm, left_arm, torso)에 제어기를 설정할 수 있습니다.
+- 제어기 변경 및 설정 시 로봇이 구동중이라면 행동을 중지(cancel_control)하고 제어기를 변경하게 됩니다.
+- 만약 제어기를 변경하지 않을 경우, 제어기는 기본적으로 joint position제어를 하게됩니다.
+
 ### Examples
 - `rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
 - 구동방식
