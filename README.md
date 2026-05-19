@@ -84,6 +84,9 @@ ros2 launch rby1_driver rby1_ros2_driver.launch.py
 `rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
 - 구동방식
 ```bash
+# 별도의 터미널을 생성
+# cd your ws
+si
 ros2 run rby1_examples joint_control_example
 ```
 | example | explain |
