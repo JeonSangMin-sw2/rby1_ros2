@@ -18,10 +18,18 @@ https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html
 https://hub.docker.com/r/rainbowroboticsofficial/rby1-sim
 
 ### additional setting
+1. 커멘드입력
+```bash
+echo 'export PATH=/opt/cmake/bin:$PATH' >> ~/.bashrc
+
+echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc
+``` 
+
+2. 직접수정
 ```bash
 sudo nano ~/.bashrc
 
-# 스크롤을 아래로 내리다보면 아래의 문구가 보임
+# 스크롤을 아래로 내리다보면 아래의 문구가 있는지 확인
 
 # enable programmable completion features (you don't need to enable
 # this, if it's already enabled in /etc/bash.bashrc and /etc/profile
@@ -107,7 +115,7 @@ ros2 launch rby1_driver rby1_ros2_driver.launch.py
 # 별도의 터미널을 생성
 # cd your ws
 source install/setup.bash
-ros2 run rby1_examples single_joint.py # 예시
+ros2 run rby1_examples single_joint # 예시
 ```
 | example | explain |
 |---|---|
