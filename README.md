@@ -11,7 +11,7 @@
 
 ### install ros2 humble
 
-1. 일반 환경에서의 설치
+1. 일반 환경에서의 설치(권장)
 - 아래의 링크를 참조하여 설치
   
 https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html
