@@ -1,62 +1,101 @@
 <?xml version="1.0"?>
-<robot name="RBY1_A_v1.0"> <!-- This file is the same as 'model-v1.0.urdf' -->
+<robot name="RBY1_M_v1_1">
+    <!--mobile type="mecanum" xyz="0 0 0" rpy="0 0 0" joints="wheel_fr wheel_fl wheel_rr wheel_rl"
+            params="0.245 0.245 0.076"/--> <!-- Lx, Ly, wheel_radius -->
+
     <link name="base">
         <inertial>
-            <mass value="60.08042639"/>
-            <origin rpy="0 0 0" xyz="-0.06157942 -0.00142271 0.13513861"/>
-            <inertia ixx="1.37742174" ixy="0.02521789" ixz="0.18565467" iyy="2.99386515" iyz="-0.00641869"
-                     izz="3.76085052"/>
+            <mass value="82.93082168"/>
+            <origin rpy="0 0 0" xyz="-0.05361531 -0.00279946 0.13500266"/>
+            <inertia ixx="2.38184773" ixy="0.00958286" ixz="0.32695003" iyy="4.04857218" iyz="-0.01527373"
+                     izz="5.45210782"/>
         </inertial>
-
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/base.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/base.dae"/>
             </geometry>
         </visual>
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/base.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/base.dae"/>
             </geometry>
         </collision>
     </link>
 
-    <link name="wheel_r">
+    <link name="wheel_fr_link">
         <inertial>
-            <mass value="1.37783736"/>
-            <origin rpy="0 0 0" xyz="0.0 -0.00073938 0.0"/>
-            <inertia ixx="0.00426657" ixy="0.0" ixz="0.0" iyy="0.00811815" iyz="0.0" izz="0.00426657"/>
+            <mass value="2.54410022"/>
+            <origin rpy="0 0 3.1415926535897932384626433832795" xyz="-0.00010511 0.00094580 0.0"/>
+            <inertia ixx="0.00470985" ixy="-0.00000025" ixz="0.0" iyy="0.00616429" iyz="0.0" izz="0.00470754"/>
         </inertial>
-
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/WHEEL.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL.dae"/>
             </geometry>
         </visual>
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/WHEEL.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL.dae"/>
             </geometry>
         </collision>
     </link>
 
-    <link name="wheel_l">
+    <link name="wheel_fl_link">
         <inertial>
-            <mass value="1.37783736"/>
-            <origin rpy="0 0 0" xyz="0.0 0.00073938 0.0"/>
-            <inertia ixx="0.00426657" ixy="0.0" ixz="0.0" iyy="0.00811815" iyz="0.0" izz="0.00426657"/>
+            <mass value="2.54417879"/>
+            <origin rpy="0 0 0" xyz="-0.00010433 -0.00094577 0.0"/>
+            <inertia ixx="0.00471013" ixy="0.00000025" ixz="0.0" iyy="0.00616468" iyz="0.0" izz="0.00470782"/>
         </inertial>
-
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/WHEEL.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL_M.dae"/>
             </geometry>
         </visual>
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/WHEEL.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL_M.dae"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="wheel_rr_link">
+        <inertial>
+            <mass value="2.54410022"/>
+            <origin rpy="0 0 0" xyz="-0.00010511 0.00094580 0.0"/>
+            <inertia ixx="0.00470985" ixy="-0.00000025" ixz="0.0" iyy="0.00616429" iyz="0.0" izz="0.00470754"/>
+        </inertial>
+        <visual>
+            <geometry>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL_M.dae"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL_M.dae"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="wheel_rl_link">
+        <inertial>
+            <mass value="2.54417879"/>
+            <origin rpy="0 0 3.1415926535897932384626433832795" xyz="-0.00010433 -0.00094577 0.0"/>
+            <inertia ixx="0.00471013" ixy="0.00000025" ixz="0.0" iyy="0.00616468" iyz="0.0" izz="0.00470782"/>
+        </inertial>
+
+        <visual>
+            <geometry>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL.dae"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://rby1_description/meshes/rby1m/MECANUM_WHEEL.dae"/>
             </geometry>
         </collision>
     </link>
@@ -71,14 +110,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_1.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_1.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_1.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_1.dae"/>
             </geometry>
         </collision>
     </link>
@@ -93,14 +132,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_2.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_2.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_2.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_2.dae"/>
             </geometry>
         </collision>
     </link>
@@ -115,14 +154,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_3.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_3.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_3.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_3.dae"/>
             </geometry>
         </collision>
     </link>
@@ -137,14 +176,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_4.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_4.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_4.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_4.dae"/>
             </geometry>
         </collision>
     </link>
@@ -159,14 +198,15 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_5.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_5.dae"/>
             </geometry>
         </visual>
+
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_5.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_5.dae"/>
             </geometry>
         </collision>
     </link>
@@ -181,14 +221,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_6.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_6.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_6.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_6.dae"/>
             </geometry>
         </collision>
     </link>
@@ -203,14 +243,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_7.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_7.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_7.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_7.dae"/>
             </geometry>
         </collision>
     </link>
@@ -225,14 +265,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_8.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_8.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_8.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_8.dae"/>
             </geometry>
         </collision>
     </link>
@@ -247,14 +287,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_9.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_9.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_9.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_9.dae"/>
             </geometry>
         </collision>
     </link>
@@ -269,14 +309,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_10.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_10.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_10.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_10.dae"/>
             </geometry>
         </collision>
     </link>
@@ -291,58 +331,58 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_11.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_11.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_11.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_11.dae"/>
             </geometry>
         </collision>
     </link>
 
     <link name="link_right_arm_5">
         <inertial>
-            <mass value="1.59194395"/>
-            <origin rpy="0 0 0" xyz="0.00318034 -0.00532264 -0.02809655"/>
-            <inertia ixx="0.00256054" ixy="-0.00002344" ixz="-0.00001563" iyy="0.00257233"
-                     iyz="0.00021608" izz="0.00156092"/>
+            <mass value="1.60506693"/>
+            <origin rpy="0 0 0" xyz="0.00592642 -0.00537804 -0.02584713"/>
+            <inertia ixx="0.00247557" ixy="-0.00004984" ixz="-0.00009861" iyy="0.00268241"
+                     iyz="0.00021452" izz="0.00166724"/>
         </inertial>
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_12.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_12_v1.1.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_12.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_12_v1.1.dae"/>
             </geometry>
         </collision>
     </link>
 
     <link name="link_right_arm_6">
         <inertial>
-            <mass value="0.21137279"/>
-            <origin rpy="0 0 0" xyz="0.00066810 -0.00031708 -0.09636043"/>
-            <inertia ixx="0.00013511" ixy="-0.00000242" ixz="-0.00000102" iyy="0.00014453"
-                     iyz="0.00000094" izz="0.00025431"/>
+            <mass value="0.42751673"/>
+            <origin rpy="0 0 0" xyz="0.00024951 -0.00019562 -0.10711314"/>
+            <inertia ixx="0.00029613" ixy="-0.00000186" ixz="-0.00000157" iyy="0.00030651"
+                     iyz="0.00000221" izz="0.00048946"/>
         </inertial>
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_13.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_13_v1.1.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_13.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_13_v1.1.dae"/>
             </geometry>
         </collision>
     </link>
@@ -357,14 +397,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_14.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_14.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_14.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_14.dae"/>
             </geometry>
         </collision>
     </link>
@@ -379,14 +419,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_15.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_15.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_15.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_15.dae"/>
             </geometry>
         </collision>
     </link>
@@ -401,14 +441,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_16.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_16.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_16.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_16.dae"/>
             </geometry>
         </collision>
     </link>
@@ -423,14 +463,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_17.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_17.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_17.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_17.dae"/>
             </geometry>
         </collision>
     </link>
@@ -445,102 +485,58 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_18.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_18.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_18.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_18.dae"/>
             </geometry>
         </collision>
     </link>
 
     <link name="link_left_arm_5">
         <inertial>
-            <mass value="1.59194395"/>
-            <origin rpy="0 0 0" xyz="0.00318034 0.00532264 -0.02809655"/>
-            <inertia ixx="0.00256054" ixy="0.00002344" ixz="-0.00001563" iyy="0.00257233"
-                     iyz="-0.00021608" izz="0.00156092"/>
+            <mass value="1.60506693"/>
+            <origin rpy="0 0 0" xyz="0.00592642 -0.00537804 -0.02584713"/>
+            <inertia ixx="0.00247557" ixy="-0.00004984" ixz="-0.00009861" iyy="0.00268241"
+                     iyz="0.00021452" izz="0.00166724"/>
         </inertial>
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_19.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_19_v1.1.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_19.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_19_v1.1.dae"/>
             </geometry>
         </collision>
     </link>
 
     <link name="link_left_arm_6">
         <inertial>
-            <mass value="0.21137279"/>
-            <origin rpy="0 0 0" xyz="-0.00066810 0.00031708 -0.09636043"/>
-            <inertia ixx="0.00013511" ixy="-0.00000242" ixz="0.00000102" iyy="0.00014453"
-                     iyz="-0.00000094" izz="0.00025431"/>
+            <mass value="0.42751673"/>
+            <origin rpy="0 0 0" xyz="-0.00024951 0.00019562 -0.10711314"/>
+            <inertia ixx="0.00029613" ixy="-0.00000186" ixz="0.00000157" iyy="0.00030651"
+                     iyz="-0.00000221" izz="0.00048946"/>
         </inertial>
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_20.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_20_v1.1.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/LINK_20.dae"/>
-            </geometry>
-        </collision>
-    </link>
-
-    <link name="FT_sensor_R">
-        <inertial>
-            <mass value="0.49078507"/>
-            <origin rpy="0 0 0" xyz="0.00010423 0.00108019 -0.01880676"/>
-            <inertia ixx="0.00028587" ixy="-0.00000146" ixz="-0.00000026" iyy="0.00030459"
-                     iyz="-0.00000772" izz="0.00036377"/>
-        </inertial>
-
-        <visual>
-            <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/FT_SENSOR_R.dae"/>
-            </geometry>
-        </visual>
-
-        <collision>
-            <origin xyz="0 0 0" rpy="0 0 0"/>
-            <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/FT_SENSOR_R.dae"/>
-            </geometry>
-        </collision>
-    </link>
-
-    <link name="FT_sensor_L">
-        <inertial>
-            <mass value="0.49078507"/>
-            <origin rpy="0 0 0" xyz="-0.00010423 -0.00108019 -0.01880676"/>
-            <inertia ixx="0.00028587" ixy="-0.00000146" ixz="0.00000026" iyy="0.00030459" iyz="0.00000772"
-                     izz="0.00036377"/>
-        </inertial>
-
-        <visual>
-            <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/FT_SENSOR_L.dae"/>
-            </geometry>
-        </visual>
-
-        <collision>
-            <origin xyz="0 0 0" rpy="0 0 0"/>
-            <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/FT_SENSOR_L.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/LINK_20_v1.1.dae"/>
             </geometry>
         </collision>
     </link>
@@ -555,14 +551,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_BODY.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_BODY.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_BODY.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_BODY.dae"/>
             </geometry>
         </collision>
     </link>
@@ -577,14 +573,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </collision>
     </link>
@@ -599,14 +595,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </collision>
     </link>
@@ -621,14 +617,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_BODY.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_BODY.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_BODY.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_BODY.dae"/>
             </geometry>
         </collision>
     </link>
@@ -643,14 +639,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </collision>
     </link>
@@ -665,14 +661,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/EE_FINGER.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/EE_FINGER.dae"/>
             </geometry>
         </collision>
     </link>
@@ -687,14 +683,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/PAN_TILT_1.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/PAN_TILT_1.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/PAN_TILT_1.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/PAN_TILT_1.dae"/>
             </geometry>
         </collision>
     </link>
@@ -709,14 +705,14 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/PAN_TILT_2.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/PAN_TILT_2.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/PAN_TILT_2.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/PAN_TILT_2.dae"/>
             </geometry>
         </collision>
     </link>
@@ -731,40 +727,76 @@
 
         <visual>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/PAN_TILT_3.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/PAN_TILT_3.dae"/>
             </geometry>
         </visual>
 
         <collision>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <geometry>
-                <mesh filename="package://rby1_description/meshes/rby1a/PAN_TILT_3.dae"/>
+                <mesh filename="package://rby1_description/meshes/rby1m/PAN_TILT_3.dae"/>
             </geometry>
         </collision>
     </link>
 
 
     <!-- Joints -->
-    <joint name="right_wheel" type="continuous">
+    <!-- <joint name="wheel_fr" type="continuous">
         <parent link="base"/>
-        <child link="wheel_r"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.228 -0.265 0.1"/>
-        <axis xyz="0 -1 0"/>
-        <limit velocity="15.707963268" acceleration="3.141592"/>
+        <child link="wheel_fr_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.243 -0.245 0.076"/>
+        <axis xyz="0 1 0"/>
     </joint>
 
-    <joint name="left_wheel" type="continuous">
+    <joint name="wheel_fl" type="continuous">
         <parent link="base"/>
-        <child link="wheel_l"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.228 0.265 0.1"/>
-        <axis xyz="0 -1 0"/>
-        <limit velocity="15.707963268" acceleration="3.141592"/>
+        <child link="wheel_fl_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.243 0.245 0.076"/>
+        <axis xyz="0 1 0"/>
+    </joint>
+
+    <joint name="wheel_rr" type="continuous">
+        <parent link="base"/>
+        <child link="wheel_rr_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="-0.247 -0.245 0.076"/>
+        <axis xyz="0 1 0"/>
+    </joint>
+
+    <joint name="wheel_rl" type="continuous">
+        <parent link="base"/>
+        <child link="wheel_rl_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="-0.247 0.245 0.076"/>
+        <axis xyz="0 1 0"/>
+    </joint> -->
+
+    <joint name="wheel_fr" type="fixed">
+        <parent link="base"/>
+        <child link="wheel_fr_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.243 -0.245 0.076"/>
+    </joint>
+
+    <joint name="wheel_fl" type="fixed">
+        <parent link="base"/>
+        <child link="wheel_fl_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.243 0.245 0.076"/>
+    </joint>
+
+    <joint name="wheel_rr" type="fixed">
+        <parent link="base"/>
+        <child link="wheel_rr_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="-0.247 -0.245 0.076"/>
+    </joint>
+
+    <joint name="wheel_rl" type="fixed">
+        <parent link="base"/>
+        <child link="wheel_rl_link"/>
+        <origin rpy="0.0 0.0 0.0" xyz="-0.247 0.245 0.076"/>
     </joint>
 
     <joint name="torso_0" type="revolute">
         <parent link="base"/>
         <child link="link_torso_0"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.2805"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.2965"/>
         <axis xyz="1 0 0"/>
         <!-- Nm, rad/s^2, rad/s, (min) rad, (max) rad -->
         <!-- 270Nm, 5rad/s^2, 120deg/s, -15deg, 15deg -->
@@ -1063,22 +1095,15 @@
 
     <joint name="tool_right" type="fixed">
         <parent link="link_right_arm_6"/>
-        <child link="FT_sensor_R"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.1087"/>
-        <axis xyz="0 0 1"/>
-    </joint>
-
-    <joint name="FT_Sensor_END_right" type="fixed">
-        <parent link="FT_sensor_R"/>
         <child link="ee_right"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.0461"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.1261"/>
         <axis xyz="0 0 1"/>
     </joint>
 
     <joint name="gripper_finger_r1" type="prismatic" in_model_type="fixed">
         <parent link="ee_right"/>
         <child link="ee_finger_r1"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.003 0.0 -0.073"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.003 0.0 -0.075"/>
         <axis xyz="-1 0 0"/>
         <limit effort="1000" velocity="0.05" lower="-0.05" upper="0"/>
     </joint>
@@ -1086,29 +1111,22 @@
     <joint name="gripper_finger_r2" type="prismatic" in_model_type="fixed">
         <parent link="ee_right"/>
         <child link="ee_finger_r2"/>
-        <origin rpy="0.0 0.0 3.1415926535" xyz="-0.003 0.0 -0.073"/>
+        <origin rpy="0.0 0.0 3.1415926535" xyz="-0.003 0.0 -0.075"/>
         <axis xyz="1 0 0"/>
         <limit effort="1000" velocity="0.05" lower="0" upper="0.05"/>
     </joint>
 
     <joint name="tool_left" type="fixed">
         <parent link="link_left_arm_6"/>
-        <child link="FT_sensor_L"/>
-        <origin rpy="0.0 0.0 0" xyz="0.0 0.0 -0.1087"/>
-        <axis xyz="0 0 1"/>
-    </joint>
-
-    <joint name="FT_Sensor_END_left" type="fixed">
-        <parent link="FT_sensor_L"/>
         <child link="ee_left"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.0461"/>
+        <origin rpy="0.0 0.0 0" xyz="0.0 0.0 -0.1261"/>
         <axis xyz="0 0 1"/>
     </joint>
 
     <joint name="gripper_finger_l1" type="prismatic" in_model_type="fixed">
         <parent link="ee_left"/>
         <child link="ee_finger_l1"/>
-        <origin rpy="0.0 0.0 0.0" xyz="0.003 0.0 -0.073"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.003 0.0 -0.075"/>
         <axis xyz="-1 0 0"/>
         <limit effort="1000" velocity="0.05" lower="-0.05" upper="0"/>
     </joint>
@@ -1116,7 +1134,7 @@
     <joint name="gripper_finger_l2" type="prismatic" in_model_type="fixed">
         <parent link="ee_left"/>
         <child link="ee_finger_l2"/>
-        <origin rpy="0.0 0.0 3.1415926535" xyz="-0.003 0.0 -0.073"/>
+        <origin rpy="0.0 0.0 3.1415926535" xyz="-0.003 0.0 -0.075"/>
         <axis xyz="1 0 0"/>
         <limit effort="1000" velocity="0.05" lower="0" upper="0.05"/>
     </joint>
@@ -1145,10 +1163,10 @@
     </joint>
 
     <!-- <joint name="head_mount" type="fixed">
-      <parent link="link_head_2"/>
-      <child link="Arbitrary device"/>
-      <origin rpy="0.0 0.0 0.0" xyz="0.022 0.0 0.04"/>
-      <axis xyz="0 0 1"/>
+      <parent link="link_head_2" />
+      <child link="Arbitrary device" />
+      <origin rpy="0.0 0.0 0.0" xyz="0.022 0.0 0.04" />
+      <axis xyz="0 0 1" />
     </joint> -->
 
 </robot>

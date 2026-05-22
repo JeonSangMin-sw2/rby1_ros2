@@ -323,3 +323,19 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 - **Tool flange topics** require `publish_tool_flange_state: true` in `driver_parameters.yaml`.
 - **Brake control** requires the Control Manager to be in `STATE_IDLE`. The `brake_control` example handles this transition automatically.
 - The `stream_joint_control` example currently uses `StreamPosition` only (the legacy `MultiJointCommand` action has been removed).
+
+## 9. rby1_description
+
+-  You can use the robot's basic TF structure and state publisher through the commands below. When implementing features related to rby1, please use the model files from the corresponding package.
+
+- parameter
+  - model_name :rby1a , rby1m 
+  - model_version
+    - rby1a : 1.0, 1.1, 1.2
+    - rby1m : 1.0, 1.1, 1.2, 1.3
+    
+```bash
+source install/setup.bash
+ros2 launch rby1_description rby1_state_publisher.launch.py model:=a version:=1_1
+
+```

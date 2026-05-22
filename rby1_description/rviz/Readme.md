@@ -1,0 +1,3 @@
+- this folder is for rviz files
+- all rviz files are located in the `install/rby1_description/share/rby1_description/rviz/`
+- if you rebuild rby1_description on other ws, you will need to reset your options in rviz
