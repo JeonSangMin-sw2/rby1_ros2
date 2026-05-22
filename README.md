@@ -333,9 +333,28 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
   - model_version
     - rby1a : 1.0, 1.1, 1.2
     - rby1m : 1.0, 1.1, 1.2, 1.3
-    
+
 ```bash
 source install/setup.bash
 ros2 launch rby1_description rby1_state_publisher.launch.py model:=a version:=1_1
 
 ```
+1. if you launch this command, you can see the following window
+
+![rby1_state_publisher_1](Doc/img/state_checker_guide_1.png)
+
+2. click 'Add', and add plugin `TF`,`RobotModel`
+
+![rby1_state_publisher_2](Doc/img/state_checker_guide_2.png)
+
+3. click Fixed Frame and set to `base`
+
+![rby1_state_publisher_3](Doc/img/state_checker_guide_3.png)
+
+4. click RobotModel, and select Topics->`/robot_description`
+
+![rby1_state_publisher_4](Doc/img/state_checker_guide_4.png)
+
+5. you can now control robot model by use joint state publisher gui
+
+![rby1_state_publisher_5](Doc/img/state_checker_guide_5.png)
