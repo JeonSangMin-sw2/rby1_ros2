@@ -31,7 +31,7 @@
     
     # Collision options
     collision_enable: false
-    collision_threshold: 0.01 # meters
+    collision_threshold: 0.01 # meter
 
     # Status publish triggers
     publish_battery_state: true
