@@ -13,13 +13,21 @@ int main(int argc, char *argv[]){
     }
 
     std::shared_ptr<rclcpp::Node> node;
-    if (model == "a" || model == "A") {
-        node = std::make_shared<rby1_ros2::RBY1_ROS2_DRIVER<rb::y1_model::A>>();
-    } else if (model == "m" || model == "M") {
-        node = std::make_shared<rby1_ros2::RBY1_ROS2_DRIVER<rb::y1_model::M>>();
-    } else {
-        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Invalid or unsupported robot model: %s", model.c_str());
-        rclcpp::shutdown();
+    try {
+        if (model == "a" || model == "A") {
+            node = std::make_shared<rby1_ros2::RBY1_ROS2_DRIVER<rb::y1_model::A>>();
+        } else if (model == "m" || model == "M") {
+            node = std::make_shared<rby1_ros2::RBY1_ROS2_DRIVER<rb::y1_model::M>>();
+        } else {
+            RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "\033[1;31m[FATAL] Invalid or unsupported robot model: %s\033[0m", model.c_str());
+            rclcpp::shutdown();
+            return 1;
+        }
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "\033[1;31m[FATAL] Driver initialization failed: %s. Shutting down.\033[0m", e.what());
+        if (rclcpp::ok()) {
+            rclcpp::shutdown();
+        }
         return 1;
     }
 

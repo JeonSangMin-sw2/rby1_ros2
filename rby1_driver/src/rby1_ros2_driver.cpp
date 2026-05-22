@@ -38,36 +38,36 @@ namespace rby1_ros2{
                         );
                         RCLCPP_INFO(this->get_logger(), "DynState created.");
                     } catch (const std::exception& e) {
-                        RCLCPP_ERROR(this->get_logger(), "Failed to load dynamics: %s. Cartesian poses will not be published.", e.what());
+                        RCLCPP_WARN(this->get_logger(), "\033[1;33m[DYNAMICS WARNING] Failed to load dynamics model: %s. Cartesian poses and impedance features will be disabled.\033[0m", e.what());
                     }
+                } else {
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31m====================================================================\033[0m");
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31m[CONNECTION ERROR] Failed to connect to robot at address: %s\033[0m", address.c_str());
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31mPlease check:\033[0m");
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31m  1. Is the robot's physical power/servo switched on?\033[0m");
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31m  2. Is the network ethernet/Wi-Fi connection active?\033[0m");
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31m  3. Is the robot_ip parameter '%s' correct?\033[0m", address.c_str());
+                    RCLCPP_ERROR(this->get_logger(), "\033[1;31m====================================================================\033[0m");
+                    throw std::runtime_error("Failed to connect to RBY1 robot at address: " + address);
                 }
                 
                 // robot state publisher
-                if (use_all_motor_state_topic_trigger_){
-                    all_motor_state_pub_ = this->create_publisher<rby1_msgs::msg::AllMotorState>(state_topic_name + "/all_motor_state", 10);
-                }else{
-                    torso_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/torso", 10);
-                    right_arm_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/right_arm", 10);
-                    left_arm_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/left_arm", 10);
-                    head_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/head", 10);
-                }
-                // robot control state checker
-                pub_control_state_ = this->create_publisher<std_msgs::msg::Int32>(state_topic_name + "/control_state", 10);
+                torso_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/torso", 10);
+                right_arm_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/right_arm", 10);
+                left_arm_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/left_arm", 10);
+                head_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/head", 10);
                 
-                if (publish_power_state_) {
-                    power_state_pub_ = this->create_publisher<rby1_msgs::msg::PowerState>(state_topic_name + "/power_state", 10);
-                }
-                if (publish_tool_flange_) {
-                    tool_flange_state_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>(state_topic_name + "/tool_flange_state", 10);
-                }
-                if (publish_torque_velocity_) {
-                    torque_velocity_state_pub_ = this->create_publisher<rby1_msgs::msg::TorqueVelocityState>(state_topic_name + "/torque_velocity_state", 10);
-                }
+                // consolidated robot state publisher
+                robot_state_pub_ = this->create_publisher<rby1_msgs::msg::RobotState>(state_topic_name + "/robot_state", 10);
                 
-                torso_cartesian_pub_ = this->create_publisher<rby1_msgs::msg::CartesianPose>(state_topic_name + "/torso_cartesian", 10);
-                right_arm_cartesian_pub_ = this->create_publisher<rby1_msgs::msg::CartesianPose>(state_topic_name + "/right_cartesian", 10);
-                left_arm_cartesian_pub_ = this->create_publisher<rby1_msgs::msg::CartesianPose>(state_topic_name + "/left_cartesian", 10);
-                
+                if (publish_battery_state_) {
+                    battery_state_pub_ = this->create_publisher<sensor_msgs::msg::BatteryState>(state_topic_name + "/battery_state", 10);
+                }
+                if (publish_tool_flange_state_) {
+                    tool_flange_left_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>(state_topic_name + "/tool_flange/left", 10);
+                    tool_flange_right_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>(state_topic_name + "/tool_flange/right", 10);
+                }
+                // loop for reading joint state
                 // loop for reading joint state
                 joint_state_timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(robot_parameter_.get_state_period*1000.0)), std::bind(&RBY1_ROS2_DRIVER<ModelType>::read_joint_state, this));
                 
@@ -78,26 +78,18 @@ namespace rby1_ros2{
                     "robot_servo", std::bind(&RBY1_ROS2_DRIVER<ModelType>::servo_control, this, _1, _2));
                 tool_flange_service_ = this->create_service<rby1_msgs::srv::StateOnOff>(
                     "tool_flange_power", std::bind(&RBY1_ROS2_DRIVER<ModelType>::tool_flange_control, this, _1, _2));
-                control_mode_service_ = this->create_service<rby1_msgs::srv::ControlMode>(
-                    "set_control_mode", std::bind(&RBY1_ROS2_DRIVER<ModelType>::control_mode_callback, this, _1, _2));
+                gravity_compensation_service_ = this->create_service<rby1_msgs::srv::GravityCompensation>(
+                    "gravity_compensation", std::bind(&RBY1_ROS2_DRIVER<ModelType>::gravity_compensation_callback, this, _1, _2));
                 cancel_control_service_ = this->create_service<std_srvs::srv::Trigger>(
                     "cancel_control", std::bind(&RBY1_ROS2_DRIVER<ModelType>::cancel_control_callback, this, _1, _2));
+                get_cartesian_pose_service_ = this->create_service<rby1_msgs::srv::GetCartesianPose>(
+                    "get_cartesian_pose", std::bind(&RBY1_ROS2_DRIVER<ModelType>::get_cartesian_pose_callback, this, _1, _2));
+                control_manager_service_ = this->create_service<rby1_msgs::srv::ControlManagerCommand>(
+                    "control_manager_command", std::bind(&RBY1_ROS2_DRIVER<ModelType>::control_manager_callback, this, _1, _2));
+                motor_brake_service_ = this->create_service<rby1_msgs::srv::StateOnOff>(
+                    "set_motor_brake", std::bind(&RBY1_ROS2_DRIVER<ModelType>::motor_brake_callback, this, _1, _2));
                 
                 /* we need to add tool flange on/off service*/
-
-                multi_position_action_server_ = rclcpp_action::create_server<MultiJointCommand>(
-                    this,
-                    state_topic_name + "/multi_position_command",
-                    std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_multi_goal, this, _1, _2),
-                    std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_multi_cancel, this, _1),
-                    std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_multi_accepted, this, _1));
-
-                single_position_action_server_ = rclcpp_action::create_server<SingleJointCommand>(
-                    this,
-                    state_topic_name + "/single_position_command",
-                    std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_single_goal, this, _1, _2),
-                    std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_single_cancel, this, _1),
-                    std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_single_accepted, this, _1));
 
                 stream_position_action_server_ = rclcpp_action::create_server<StreamPosition>(
                     this,
@@ -105,9 +97,28 @@ namespace rby1_ros2{
                     std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_stream_goal, this, _1, _2),
                     std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_stream_cancel, this, _1),
                     std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_stream_accepted, this, _1));
+
+                if (!joint_position_topic_name.empty()) {
+                    rby1_joint_command_action_server_ = rclcpp_action::create_server<Rby1JointCommand>(
+                        this,
+                        joint_position_topic_name,
+                        std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_rby1_joint_goal, this, _1, _2),
+                        std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_rby1_joint_cancel, this, _1),
+                        std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_rby1_joint_accepted, this, _1));
+                }
+
+                if (!cartesian_position_topic_name.empty()) {
+                    rby1_cartesian_command_action_server_ = rclcpp_action::create_server<Rby1CartesianCommand>(
+                        this,
+                        cartesian_position_topic_name,
+                        std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_rby1_cartesian_goal, this, _1, _2),
+                        std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_rby1_cartesian_cancel, this, _1),
+                        std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_rby1_cartesian_accepted, this, _1));
+                }
             }
             catch (const std::exception& e) {
-                RCLCPP_ERROR(this->get_logger(), "error occured: %s", e.what());
+                RCLCPP_ERROR(this->get_logger(), "\033[1;31m[INITIALIZATION ERROR] Exception caught during driver setup: %s\033[0m", e.what());
+                throw;
             }
     }
 
@@ -121,6 +132,8 @@ namespace rby1_ros2{
         this->declare_parameter<std::string>("robot_ip", "127.0.0.1:50051");
         this->declare_parameter<std::string>("model", "a");
         this->declare_parameter<std::string>("state_topic_name", "joint_states");
+        this->declare_parameter<std::string>("joint_position_topic_name", "");
+        this->declare_parameter<std::string>("cartesian_position_topic_name", "");
         this->declare_parameter<std::vector<std::string>>("power_on", {"all"});
         this->declare_parameter<std::vector<std::string>>("servo_on", {"all"});
 
@@ -134,15 +147,15 @@ namespace rby1_ros2{
         
         this->declare_parameter<bool>("fault_reset_trigger", false);
         this->declare_parameter<bool>("node_power_off_trigger",false);
-        this->declare_parameter<bool>("use_all_motor_state_topic_trigger",false);
         this->declare_parameter<double>("collision_threshold", 0.03);
-        this->declare_parameter<bool>("publish_power_state", false);
-        this->declare_parameter<bool>("publish_tool_flange", false);
-        this->declare_parameter<bool>("publish_torque_velocity", false);
+        this->declare_parameter<bool>("publish_battery_state", false);
+        this->declare_parameter<bool>("publish_tool_flange_state", false);
         
         this->get_parameter("robot_ip", address);
         this->get_parameter("model", model);
         this->get_parameter("state_topic_name", state_topic_name);
+        this->get_parameter("joint_position_topic_name", joint_position_topic_name);
+        this->get_parameter("cartesian_position_topic_name", cartesian_position_topic_name);
         
 
         this->get_parameter("power_on", robot_parameter_.power_on_list);
@@ -156,35 +169,11 @@ namespace rby1_ros2{
         this->get_parameter("stop_position_tracking_error", robot_parameter_.stop_position_tracking_error);
         this->get_parameter("fault_reset_trigger", fault_reset_trigger);
         this->get_parameter("node_power_off_trigger", node_power_off_trigger_);
-        this->get_parameter("use_all_motor_state_topic_trigger", use_all_motor_state_topic_trigger_);
         this->get_parameter("collision_threshold", collision_threshold_);
-        this->get_parameter("publish_power_state", publish_power_state_);
-        this->get_parameter("publish_tool_flange", publish_tool_flange_);
-        this->get_parameter("publish_torque_velocity", publish_torque_velocity_);
+        this->get_parameter("publish_battery_state", publish_battery_state_);
+        this->get_parameter("publish_tool_flange_state", publish_tool_flange_state_);
 
-        auto init_bcfg = [](BuilderConfig& bcfg, const std::string& mode, const std::string& ref, const std::string& target, int dof) {
-            bcfg.is_configured = false;
-            if (mode == "joint_impedance") bcfg.control_type = rby1_msgs::srv::ControlMode::Request::JOINT_IMPEDANCE;
-            else if (mode == "cartesian_position" || mode == "cartesian") bcfg.control_type = rby1_msgs::srv::ControlMode::Request::CARTESIAN_POSITION;
-            else if (mode == "cartesian_impedance") bcfg.control_type = rby1_msgs::srv::ControlMode::Request::CARTESIAN_IMPEDANCE;
-            else if (mode == "gravity_compensation") bcfg.control_type = rby1_msgs::srv::ControlMode::Request::GRAVITY_COMPENSATION;
-            else if (mode == "joint_group_position") bcfg.control_type = rby1_msgs::srv::ControlMode::Request::JOINT_GROUP_POSITION;
-            else bcfg.control_type = rby1_msgs::srv::ControlMode::Request::JOINT_POSITION;
-            
-            bcfg.ref_link = ref;
-            bcfg.target_link = target;
-            bcfg.translation_weight = {1000.0, 1000.0, 1000.0};
-            bcfg.rotation_weight = {100.0, 100.0, 100.0};
-            bcfg.joint_stiffness = std::vector<double>(dof, 1000.0);
-            bcfg.damping_ratio = 0.85;
-            bcfg.linear_velocity_limit = 0.5;
-            bcfg.angular_velocity_limit = 1.0;
-        };
 
-        init_bcfg(torso_builder_, "joint", "base", "link_torso_5", 6);
-        init_bcfg(right_arm_builder_, "joint", "link_torso_5", "link_right_arm_6", 7);
-        init_bcfg(left_arm_builder_, "joint", "link_torso_5", "link_left_arm_6", 7);
-        init_bcfg(head_builder_, "joint", "link_torso_5", "link_head_2", 2);
 
         if (address == "" || model == ""){
             RCLCPP_ERROR(this->get_logger(), "address or model isn't declared");
@@ -284,8 +273,23 @@ namespace rby1_ros2{
         }
 
         if (request->state) {
-            if (robot_->IsServoOn(servo_list_str)) {
-                RCLCPP_INFO(this->get_logger(), "Servo is already ON [%s], skipping.", servo_list_str.c_str());
+            bool already_on = false;
+            try {
+                if (robot_->IsServoOn(servo_list_str)) {
+                    already_on = true;
+                }
+            } catch (...) {}
+
+            // Fallback check: If the Control Manager is already Enabled, the servos must be ON.
+            auto cm_state_val = robot_->GetControlManagerState().state;
+            if (cm_state_val == rb::ControlManagerState::State::kEnabled) {
+                already_on = true;
+            }
+
+            if (already_on) {
+                RCLCPP_INFO(this->get_logger(), "Servo is already ON [%s] (Control Manager: %d), skipping.", 
+                            servo_list_str.c_str(), static_cast<int>(cm_state_val));
+                check_controll_manager();
                 response->success = true;
                 response->message = "Servo already ON";
                 return;
@@ -388,53 +392,61 @@ namespace rby1_ros2{
     }
 
     template <typename ModelType>
-    void RBY1_ROS2_DRIVER<ModelType>::control_mode_callback(const std::shared_ptr<rby1_msgs::srv::ControlMode::Request> request,
-                                                            std::shared_ptr<rby1_msgs::srv::ControlMode::Response> response) {
-        BuilderConfig* target_bcfg = nullptr;
-        if (request->part_name == "torso") target_bcfg = &torso_builder_;
-        else if (request->part_name == "right_arm") target_bcfg = &right_arm_builder_;
-        else if (request->part_name == "left_arm") target_bcfg = &left_arm_builder_;
-        else if (request->part_name == "head") target_bcfg = &head_builder_;
-        
-        if (!target_bcfg) {
-            response->success = false;
-            response->message = "Invalid part_name: " + request->part_name;
+    void RBY1_ROS2_DRIVER<ModelType>::gravity_compensation_callback(const std::shared_ptr<rby1_msgs::srv::GravityCompensation::Request> request,
+                                                                    std::shared_ptr<rby1_msgs::srv::GravityCompensation::Response> response) {
+        if (request->part_name != "torso" && request->part_name != "right_arm" && request->part_name != "left_arm") {
+            response->response = false;
+            RCLCPP_ERROR(this->get_logger(), "GravityCompensation: Invalid part_name: %s", request->part_name.c_str());
             return;
         }
 
+        // 1. Collision check: Robot must NOT be moving (executing/switching)
         const auto& cm_state = robot_->GetControlManagerState();
         if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
             cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
-            RCLCPP_WARN(this->get_logger(), "Robot is moving. Canceling current control before changing mode...");
-            robot_->CancelControl();
+            response->response = false;
+            RCLCPP_WARN(this->get_logger(), "GravityCompensation: Robot is active in execution/switching state. Rejecting request.");
+            return;
         }
 
-        target_bcfg->is_configured = true;
-        target_bcfg->control_type = request->control_type;
-        target_bcfg->ref_link = request->ref_link;
-        target_bcfg->target_link = request->target_link;
-        target_bcfg->translation_weight = request->translation_weight;
-        target_bcfg->rotation_weight = request->rotation_weight;
-        target_bcfg->joint_stiffness = request->joint_stiffness;
-        target_bcfg->damping_ratio = request->damping_ratio;
-        target_bcfg->linear_velocity_limit = (request->linear_velocity_limit > 0.0) ? request->linear_velocity_limit : robot_parameter_.linear_velocity_limit;
-        target_bcfg->angular_velocity_limit = (request->angular_velocity_limit > 0.0) ? request->angular_velocity_limit : robot_parameter_.angular_velocity_limit;
-        target_bcfg->joint_names = request->joint_names;
+        // 2. Build and Send Gravity Compensation command
+        auto b = rb::GravityCompensationCommandBuilder();
+        b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(10.0)); // standard control hold time
+        b.SetOn(request->state);
 
-        response->success = true;
-        response->message = "Control mode updated for " + request->part_name;
-        RCLCPP_INFO(this->get_logger(), "Updated control mode for %s to type %d (Ref: %s, Target: %s, V_lim: %f, W_lim: %f)", 
-            request->part_name.c_str(), request->control_type, 
-            request->ref_link.c_str(), request->target_link.c_str(),
-            target_bcfg->linear_velocity_limit, target_bcfg->angular_velocity_limit);
+        auto body_comp = rb::BodyComponentBasedCommandBuilder();
+        if (request->part_name == "torso") {
+            body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+            gravity_compensation_torso_ = request->state;
+        } else if (request->part_name == "right_arm") {
+            body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
+            gravity_compensation_right_arm_ = request->state;
+        } else if (request->part_name == "left_arm") {
+            body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+            gravity_compensation_left_arm_ = request->state;
+        }
+
+        auto component_cmd_builder = rb::ComponentBasedCommandBuilder();
+        component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
+
+        try {
+            auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
+            response->response = true;
+            RCLCPP_INFO(this->get_logger(), "GravityCompensation: Successfully set %s gravity compensation to %s",
+                request->part_name.c_str(), request->state ? "ON" : "OFF");
+        } catch (const std::exception& e) {
+            response->response = false;
+            RCLCPP_ERROR(this->get_logger(), "GravityCompensation: Failed to send command: %s", e.what());
+        }
     }
 
     template <typename ModelType>
     bool RBY1_ROS2_DRIVER<ModelType>::check_controll_manager(){
-        robot_->ResetFaultControlManager();
-        if (!robot_->EnableControlManager()) return false;
-        
         const auto& control_manager_state = robot_->GetControlManagerState();
+
+        if (control_manager_state.state == rb::ControlManagerState::State::kEnabled) {
+            return true;
+        }
 
         if (control_manager_state.state == rb::ControlManagerState::State::kMajorFault ||
             control_manager_state.state == rb::ControlManagerState::State::kMinorFault)
@@ -546,569 +558,103 @@ namespace rby1_ros2{
             fill(this->robot_joint_.joint_head,       this->info_.head_joint_idx);
             fill(this->robot_joint_.joint_wheel,      this->info_.mobility_joint_idx);
 
-            if(this->use_all_motor_state_topic_trigger_){
-                rby1_msgs::msg::AllMotorState all_motor_state;
-                all_motor_state.torso = this->robot_joint_.joint_torso.position;
-                all_motor_state.right_arm = this->robot_joint_.joint_right_arm.position;
-                all_motor_state.left_arm = this->robot_joint_.joint_left_arm.position;
-                all_motor_state.head = this->robot_joint_.joint_head.position;
-                this->all_motor_state_pub_->publish(all_motor_state);
-            }else{
-                this->torso_pub_->publish(this->robot_joint_.joint_torso);
-                this->right_arm_pub_->publish(this->robot_joint_.joint_right_arm);
-                this->left_arm_pub_->publish(this->robot_joint_.joint_left_arm);
-                this->head_pub_->publish(this->robot_joint_.joint_head);
-            }
-            
-            std_msgs::msg::Int32 state_msg;
-            state_msg.data = static_cast<int32_t>(robot_state_.state);
-            pub_control_state_->publish(state_msg);
+            this->torso_pub_->publish(this->robot_joint_.joint_torso);
+            this->right_arm_pub_->publish(this->robot_joint_.joint_right_arm);
+            this->left_arm_pub_->publish(this->robot_joint_.joint_left_arm);
+            this->head_pub_->publish(this->robot_joint_.joint_head);
+            // Publish RobotState
+            rby1_msgs::msg::RobotState robot_state_msg;
+            robot_state_msg.control_manager_state = static_cast<int32_t>(robot_state_.state);
 
-            // Publish rich status
-            if (publish_power_state_) {
-                rby1_msgs::msg::PowerState ps_msg;
-                ps_msg.battery_voltage = state.battery_state.voltage;
-                ps_msg.battery_current = state.battery_state.current;
-                ps_msg.battery_level_percent = state.battery_state.level_percent;
-                
-                if (!state.emo_states.empty()) ps_msg.emo_state = rb::to_string(state.emo_states[0].state);
-                if (!state.power_states.empty()) {
-                    ps_msg.power_voltage = state.power_states[0].voltage;
-                    ps_msg.power_state = rb::to_string(state.power_states[0].state);
+            auto fill_brakes = [&](std::vector<bool>& brake_vec, const std::vector<unsigned int>& idx_vec) {
+                brake_vec.resize(idx_vec.size());
+                for (size_t i = 0; i < idx_vec.size(); ++i) {
+                    unsigned int idx = idx_vec[i];
+                    bool has_brake = info_.joint_infos[idx].has_brake;
+                    brake_vec[i] = has_brake && !state.joint_states[idx].is_ready;
                 }
-                for (const auto& js : state.joint_states) ps_msg.motor_currents.push_back(js.current);
-                power_state_pub_->publish(ps_msg);
-            }
-
-            auto fill_arr = [](double* dest, const Eigen::Vector<double, 3>& src) {
-                dest[0] = src[0]; dest[1] = src[1]; dest[2] = src[2];
             };
 
-            // Cartesian Poses publishing
-            if (dynamics_ && dyn_state_) {
-                try {
-                    Eigen::Vector<double, ModelType::kRobotDOF> q = Eigen::Vector<double, ModelType::kRobotDOF>::Zero();
-                    auto dyn_joint_names = dyn_state_->GetJointNames();
-                    for (int i = 0; i < (int)dyn_joint_names.size(); ++i) {
-                        std::string name(dyn_joint_names[i]);
-                        for (size_t j = 0; j < info_.joint_infos.size(); ++j) {
-                            if (info_.joint_infos[j].name == name) {
-                                q[i] = state.position[j];
-                                break;
-                            }
-                        }
-                    }
-                    
-                    dyn_state_->SetQ(q);
-                    dynamics_->ComputeForwardKinematics(dyn_state_);
+            fill_brakes(robot_state_msg.brake_state.torso,     info_.torso_joint_idx);
+            fill_brakes(robot_state_msg.brake_state.right_arm, info_.right_arm_joint_idx);
+            fill_brakes(robot_state_msg.brake_state.left_arm,  info_.left_arm_joint_idx);
+            fill_brakes(robot_state_msg.brake_state.head,       info_.head_joint_idx);
 
-                    auto get_pose = [&](const std::string& part_name, BuilderConfig& cfg, const std::string& default_ref, const std::string& default_target) {
-                        std::string ref = cfg.ref_link.empty() ? default_ref : cfg.ref_link;
-                        std::string target = cfg.target_link.empty() ? default_target : cfg.target_link;
-                        
-                        rby1_msgs::msg::CartesianPose msg;
-                        msg.reference_link = ref;
-                        msg.target_link = target;
-                        
-                        auto it_ref = std::find(dyn_link_names_.begin(), dyn_link_names_.end(), ref);
-                        auto it_target = std::find(dyn_link_names_.begin(), dyn_link_names_.end(), target);
-                        
-                        if (it_ref != dyn_link_names_.end() && it_target != dyn_link_names_.end()) {
-                            int ref_idx = std::distance(dyn_link_names_.begin(), it_ref);
-                            int target_idx = std::distance(dyn_link_names_.begin(), it_target);
-                            try {
-                                auto T = dynamics_->ComputeTransformation(dyn_state_, ref_idx, target_idx);
-                                std::copy(T.data(), T.data() + 16, msg.matrix.begin());
-                            } catch (...) {}
-                        }
-                        return msg;
-                    };
+            bool left_connected = (state.tool_flange_left.time_since_last_update.tv_sec != 0 || state.tool_flange_left.time_since_last_update.tv_nsec != 0);
+            bool right_connected = (state.tool_flange_right.time_since_last_update.tv_sec != 0 || state.tool_flange_right.time_since_last_update.tv_nsec != 0);
+            robot_state_msg.tool_flange_state = {left_connected, right_connected};
 
-                    // Torso
-                    torso_cartesian_pub_->publish(get_pose("torso", torso_builder_, "base", "link_torso_5"));
-
-                    // Right Arm
-                    right_arm_cartesian_pub_->publish(get_pose("right_arm", right_arm_builder_, "base", "link_right_arm_6"));
-
-                    // Left Arm
-                    left_arm_cartesian_pub_->publish(get_pose("left_arm", left_arm_builder_, "base", "link_left_arm_6"));
-
-                } catch (const std::exception& e) {
-                    // FK might fail if link names are wrong or robot not initialized
-                }
+            robot_state_msg.emo_state = false;
+            if (!state.emo_states.empty()) {
+                robot_state_msg.emo_state = (state.emo_states[0].state == rb::EMOState::State::kPressed);
             }
 
-            if (publish_tool_flange_) {
-                rby1_msgs::msg::ToolFlangeState tf_msg;
-                
-                // FT Sensor
-                fill_arr(tf_msg.ft_force_right.data(), state.ft_sensor_right.force);
-                fill_arr(tf_msg.ft_torque_right.data(), state.ft_sensor_right.torque);
-                fill_arr(tf_msg.ft_force_left.data(), state.ft_sensor_left.force);
-                fill_arr(tf_msg.ft_torque_left.data(), state.ft_sensor_left.torque);
+            robot_state_msg.center_of_mass[0] = state.center_of_mass[0];
+            robot_state_msg.center_of_mass[1] = state.center_of_mass[1];
+            robot_state_msg.center_of_mass[2] = state.center_of_mass[2];
 
-                // Right Tool Flange
-                fill_arr(tf_msg.tool_flange_right_gyro.data(), state.tool_flange_right.gyro);
-                fill_arr(tf_msg.tool_flange_right_acceleration.data(), state.tool_flange_right.acceleration);
-                tf_msg.tool_flange_right_switch_a = state.tool_flange_right.switch_A;
-                tf_msg.tool_flange_right_output_voltage = state.tool_flange_right.output_voltage;
-                tf_msg.tool_flange_right_digital_input_a = state.tool_flange_right.digital_input_A;
-                tf_msg.tool_flange_right_digital_input_b = state.tool_flange_right.digital_input_B;
-                tf_msg.tool_flange_right_digital_output_a = state.tool_flange_right.digital_output_A;
-                tf_msg.tool_flange_right_digital_output_b = state.tool_flange_right.digital_output_B;
+            robot_state_pub_->publish(robot_state_msg);
 
-                // Left Tool Flange
-                fill_arr(tf_msg.tool_flange_left_gyro.data(), state.tool_flange_left.gyro);
-                fill_arr(tf_msg.tool_flange_left_acceleration.data(), state.tool_flange_left.acceleration);
-                tf_msg.tool_flange_left_switch_a = state.tool_flange_left.switch_A;
-                tf_msg.tool_flange_left_output_voltage = state.tool_flange_left.output_voltage;
-                tf_msg.tool_flange_left_digital_input_a = state.tool_flange_left.digital_input_A;
-                tf_msg.tool_flange_left_digital_input_b = state.tool_flange_left.digital_input_B;
-                tf_msg.tool_flange_left_digital_output_a = state.tool_flange_left.digital_output_A;
-                tf_msg.tool_flange_left_digital_output_b = state.tool_flange_left.digital_output_B;
-                
-                tool_flange_state_pub_->publish(tf_msg);
+            // Publish Battery State
+            if (publish_battery_state_) {
+                sensor_msgs::msg::BatteryState bat_msg;
+                bat_msg.header.stamp = now;
+                bat_msg.voltage = state.battery_state.voltage;
+                bat_msg.current = state.battery_state.current;
+                bat_msg.percentage = state.battery_state.level_percent / 100.0;
+                battery_state_pub_->publish(bat_msg);
             }
 
-            if (publish_torque_velocity_) {
-                rby1_msgs::msg::TorqueVelocityState tv_msg;
-                for (int i = 0; i < state.velocity.size(); ++i) tv_msg.velocity.push_back(state.velocity[i]);
-                for (int i = 0; i < state.torque.size(); ++i) tv_msg.torque.push_back(state.torque[i]);
-                for (int i = 0; i < state.target_feedforward_torque.size(); ++i) tv_msg.target_feedforward_torque.push_back(state.target_feedforward_torque[i]);
-                tv_msg.center_of_mass[0] = state.center_of_mass[0];
-                tv_msg.center_of_mass[1] = state.center_of_mass[1];
-                tv_msg.center_of_mass[2] = state.center_of_mass[2];
-                torque_velocity_state_pub_->publish(tv_msg);
+            // Publish Tool Flange State split
+            if (publish_tool_flange_state_) {
+                auto fill_vec3 = [](std::array<double, 3>& dest, const Eigen::Vector<double, 3>& src, bool valid) {
+                    if (valid) { dest[0] = src[0]; dest[1] = src[1]; dest[2] = src[2]; }
+                    else        { dest[0] = 0.0;   dest[1] = 0.0;   dest[2] = 0.0; }
+                };
+
+                // left flange
+                bool lf_valid = (state.tool_flange_left.time_since_last_update.tv_sec != 0 ||
+                                 state.tool_flange_left.time_since_last_update.tv_nsec != 0);
+                bool lf_ft_valid = (state.ft_sensor_left.time_since_last_update.tv_sec != 0 ||
+                                    state.ft_sensor_left.time_since_last_update.tv_nsec != 0);
+                rby1_msgs::msg::ToolFlangeState tf_left;
+                fill_vec3(tf_left.ft_force,      state.ft_sensor_left.force,       lf_ft_valid);
+                fill_vec3(tf_left.ft_torque,     state.ft_sensor_left.torque,      lf_ft_valid);
+                fill_vec3(tf_left.gyro,          state.tool_flange_left.gyro,       lf_valid);
+                fill_vec3(tf_left.acceleration,  state.tool_flange_left.acceleration, lf_valid);
+                tf_left.switch_a        = lf_valid ? state.tool_flange_left.switch_A        : false;
+                tf_left.output_voltage  = lf_valid ? state.tool_flange_left.output_voltage  : 0;
+                tf_left.digital_input_a = lf_valid ? state.tool_flange_left.digital_input_A : false;
+                tf_left.digital_input_b = lf_valid ? state.tool_flange_left.digital_input_B : false;
+                tf_left.digital_output_a= lf_valid ? state.tool_flange_left.digital_output_A: false;
+                tf_left.digital_output_b= lf_valid ? state.tool_flange_left.digital_output_B: false;
+                tool_flange_left_pub_->publish(tf_left);
+
+                // right flange
+                bool rf_valid = (state.tool_flange_right.time_since_last_update.tv_sec != 0 ||
+                                 state.tool_flange_right.time_since_last_update.tv_nsec != 0);
+                bool rf_ft_valid = (state.ft_sensor_right.time_since_last_update.tv_sec != 0 ||
+                                    state.ft_sensor_right.time_since_last_update.tv_nsec != 0);
+                rby1_msgs::msg::ToolFlangeState tf_right;
+                fill_vec3(tf_right.ft_force,      state.ft_sensor_right.force,        rf_ft_valid);
+                fill_vec3(tf_right.ft_torque,     state.ft_sensor_right.torque,       rf_ft_valid);
+                fill_vec3(tf_right.gyro,          state.tool_flange_right.gyro,        rf_valid);
+                fill_vec3(tf_right.acceleration,  state.tool_flange_right.acceleration,rf_valid);
+                tf_right.switch_a        = rf_valid ? state.tool_flange_right.switch_A        : false;
+                tf_right.output_voltage  = rf_valid ? state.tool_flange_right.output_voltage  : 0;
+                tf_right.digital_input_a = rf_valid ? state.tool_flange_right.digital_input_A : false;
+                tf_right.digital_input_b = rf_valid ? state.tool_flange_right.digital_input_B : false;
+                tf_right.digital_output_a= rf_valid ? state.tool_flange_right.digital_output_A: false;
+                tf_right.digital_output_b= rf_valid ? state.tool_flange_right.digital_output_B: false;
+                tool_flange_right_pub_->publish(tf_right);
             }
+
         }
     } catch (const std::exception& e) {
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Error in read_joint_state loop: %s", e.what());
     }
 }
 
-
-    // --- MultiJointCommand Handlers ---
-    template <typename ModelType>
-    rclcpp_action::GoalResponse RBY1_ROS2_DRIVER<ModelType>::handle_multi_goal(
-        const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const MultiJointCommand::Goal> goal) {
-        RCLCPP_INFO(this->get_logger(), "Received MultiJointCommand request");
-        (void)uuid;
-        
-        if (!goal->torso.empty() && !torso_builder_.is_configured) {
-            RCLCPP_ERROR(this->get_logger(), "Torso control mode is not configured. Call SetControlMode service first.");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-        if (!goal->right_arm.empty() && !right_arm_builder_.is_configured) {
-            RCLCPP_ERROR(this->get_logger(), "Right arm control mode is not configured. Call SetControlMode service first.");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-        if (!goal->left_arm.empty() && !left_arm_builder_.is_configured) {
-            RCLCPP_ERROR(this->get_logger(), "Left arm control mode is not configured. Call SetControlMode service first.");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-        if (!goal->head.empty() && !head_builder_.is_configured) {
-            RCLCPP_ERROR(this->get_logger(), "Head control mode is not configured. Call SetControlMode service first.");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-
-        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-    }
-
-    template <typename ModelType>
-    rclcpp_action::CancelResponse RBY1_ROS2_DRIVER<ModelType>::handle_multi_cancel(
-        const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiJointCommand>> goal_handle) {
-        RCLCPP_INFO(this->get_logger(), "Received request to cancel MultiJointCommand goal");
-        (void)goal_handle;
-        robot_->CancelControl();
-        return rclcpp_action::CancelResponse::ACCEPT;
-    }
-
-    template <typename ModelType>
-    void RBY1_ROS2_DRIVER<ModelType>::handle_multi_accepted(
-        const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiJointCommand>> goal_handle) {
-        using namespace std::placeholders;
-        std::thread{std::bind(&RBY1_ROS2_DRIVER<ModelType>::execute_multi_command, this, _1), goal_handle}.detach();
-    }
-
-    template <typename ModelType>
-    void RBY1_ROS2_DRIVER<ModelType>::apply_body_builder(
-        rb::BodyComponentBasedCommandBuilder& body_comp, 
-        const std::string& part_name,
-        const std::vector<double>& goal_data,
-        double min_time) {
-        
-        BuilderConfig* bcfg = nullptr;
-        if (part_name == "torso") bcfg = &torso_builder_;
-        else if (part_name == "right_arm") bcfg = &right_arm_builder_;
-        else if (part_name == "left_arm") bcfg = &left_arm_builder_;
-        else return;
-
-        if (bcfg->control_type == rby1_msgs::srv::ControlMode::Request::GRAVITY_COMPENSATION) {
-            auto b = rb::GravityCompensationCommandBuilder();
-            b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(min_time * 0.1));
-            b.SetOn(true);
-            if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
-            else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
-            else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
-        } else if (bcfg->control_type == rby1_msgs::srv::ControlMode::Request::CARTESIAN_POSITION || 
-                   bcfg->control_type == rby1_msgs::srv::ControlMode::Request::CARTESIAN_IMPEDANCE) {
-            
-            Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
-            if (goal_data.size() == 16) {
-                T = Eigen::Map<const Eigen::Matrix4d>(goal_data.data());
-            } else {
-                RCLCPP_WARN(this->get_logger(), "Cartesian control %s requires exactly 16 float elements (4x4 matrix), got %zu", part_name.c_str(), goal_data.size());
-                return;
-            }
-
-            if (bcfg->control_type == rby1_msgs::srv::ControlMode::Request::CARTESIAN_IMPEDANCE) {
-                auto b = rb::ImpedanceControlCommandBuilder();
-                b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(min_time * 0.1));
-                b.SetReferenceLinkName(bcfg->ref_link);
-                b.SetLinkName(bcfg->target_link);
-                
-                Eigen::Vector3d t_weight(bcfg->translation_weight.size()>=3 ? bcfg->translation_weight[0] : 1000.0, 
-                                         bcfg->translation_weight.size()>=3 ? bcfg->translation_weight[1] : 1000.0, 
-                                         bcfg->translation_weight.size()>=3 ? bcfg->translation_weight[2] : 1000.0);
-                Eigen::Vector3d r_weight(bcfg->rotation_weight.size()>=3 ? bcfg->rotation_weight[0] : 100.0, 
-                                         bcfg->rotation_weight.size()>=3 ? bcfg->rotation_weight[1] : 100.0, 
-                                         bcfg->rotation_weight.size()>=3 ? bcfg->rotation_weight[2] : 100.0);
-                b.SetRotationWeight(r_weight);
-                b.SetDampingRatio(bcfg->damping_ratio > 0.0 ? bcfg->damping_ratio : 1.0);
-                b.SetTransformation(T);
-
-                if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
-                else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
-                else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
-            } else {
-                auto b = rb::CartesianCommandBuilder();
-                b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(min_time * 0.1));
-                b.AddTarget(bcfg->ref_link, bcfg->target_link, T, bcfg->linear_velocity_limit, bcfg->angular_velocity_limit);
-                b.SetMinimumTime(min_time);
-                
-                b.SetStopPositionTrackingError(robot_parameter_.stop_position_tracking_error);
-                b.SetStopOrientationTrackingError(robot_parameter_.stop_orientation_tracking_error);
-                
-                if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
-                else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
-                else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
-            }
-        } else {
-            if (part_name == "torso" && bcfg->control_type == rby1_msgs::srv::ControlMode::Request::JOINT_GROUP_POSITION) {
-                auto b = rb::JointGroupPositionCommandBuilder();
-                if (!bcfg->joint_names.empty()) {
-                    b.SetJointNames(bcfg->joint_names);
-                }
-                Eigen::VectorXd q = Eigen::Map<const Eigen::VectorXd>(goal_data.data(), goal_data.size());
-                b.SetPosition(q);
-                b.SetMinimumTime(min_time);
-                body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
-            } else if (bcfg->control_type == rby1_msgs::srv::ControlMode::Request::JOINT_IMPEDANCE) {
-                size_t expected_dof = (part_name == "torso") ? 6 : (part_name == "head" ? 2 : 7);
-                if (goal_data.size() != expected_dof) {
-                    RCLCPP_WARN(this->get_logger(), "Joint Impedance control %s requires %zu float elements, got %zu", part_name.c_str(), expected_dof, goal_data.size());
-                    return;
-                }
-                auto b = rb::JointImpedanceControlCommandBuilder();
-                b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(min_time * 0.1));
-                Eigen::VectorXd q = Eigen::Map<const Eigen::VectorXd>(goal_data.data(), goal_data.size());
-                b.SetPosition(q);
-                Eigen::VectorXd stiffness = Eigen::Map<const Eigen::VectorXd>(bcfg->joint_stiffness.data(), bcfg->joint_stiffness.size());
-                if (stiffness.size() == q.size()) {
-                    b.SetStiffness(stiffness);
-                }
-                b.SetDampingRatio(bcfg->damping_ratio);
-                
-                if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
-                else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
-                else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
-            } else {
-                size_t expected_dof = 0;
-                if (part_name == "torso") expected_dof = info_.torso_joint_idx.size();
-                else if (part_name == "head") expected_dof = info_.head_joint_idx.size();
-                else if (part_name == "right_arm") expected_dof = info_.right_arm_joint_idx.size();
-                else if (part_name == "left_arm") expected_dof = info_.left_arm_joint_idx.size();
-
-                if (goal_data.size() != expected_dof) {
-                    RCLCPP_WARN(this->get_logger(), "Joint Position control %s requires %zu float elements, got %zu", part_name.c_str(), expected_dof, goal_data.size());
-                    return;
-                }
-                auto b = rb::JointPositionCommandBuilder();
-                b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(min_time * 0.1));
-                b.SetMinimumTime(min_time);
-                Eigen::VectorXd q = Eigen::Map<const Eigen::VectorXd>(goal_data.data(), goal_data.size());
-                b.SetPosition(q);
-                if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
-                else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
-                else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
-            }
-        }
-    }
-
-    template <typename ModelType>
-    std::optional<rb::HeadCommandBuilder> RBY1_ROS2_DRIVER<ModelType>::apply_head_builder(
-        const std::vector<double>& goal_data,
-        double min_time) {
-        
-        BuilderConfig* bcfg = &head_builder_;
-        if (bcfg->control_type == rby1_msgs::srv::ControlMode::Request::JOINT_POSITION || 
-            bcfg->control_type == rby1_msgs::srv::ControlMode::Request::JOINT_IMPEDANCE) { // head mostly uses joint position
-            auto b = rb::JointPositionCommandBuilder();
-            b.SetMinimumTime(min_time);
-            Eigen::VectorXd q = Eigen::Map<const Eigen::VectorXd>(goal_data.data(), goal_data.size());
-            b.SetPosition(q);
-            return std::make_optional<rb::HeadCommandBuilder>(b);
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Head currently only supports joint control.");
-            return std::nullopt;
-        }
-    }
-
-    template <typename ModelType>
-    std::optional<rb::MobilityCommandBuilder> RBY1_ROS2_DRIVER<ModelType>::apply_mobile_builder(
-        const std::vector<double>& goal_data) {
-        
-        RCLCPP_WARN(this->get_logger(), "Mobility control is not yet fully implemented in apply_mobile_builder.");
-        return std::nullopt;
-    }
-
-    template <typename ModelType>
-    void RBY1_ROS2_DRIVER<ModelType>::execute_multi_command(
-        const std::shared_ptr<rclcpp_action::ServerGoalHandle<MultiJointCommand>> goal_handle) {
-        is_control_canceled_ = false;
-        const auto goal = goal_handle->get_goal();
-        auto result = std::make_shared<MultiJointCommand::Result>();
-
-        try {
-            bool use_torso = !goal->torso.empty();
-            bool use_right_arm = !goal->right_arm.empty();
-            bool use_left_arm = !goal->left_arm.empty();
-            bool use_head = !goal->head.empty();
-
-            if (!use_torso && !use_right_arm && !use_left_arm && !use_head) {
-                RCLCPP_WARN(this->get_logger(), "Received empty MultiJointCommand goal.");
-                result->success = false;
-                result->finish_code = "Empty arrays";
-                goal_handle->abort(result);
-                return;
-            }
-
-            if (!robot_->HasEstablishedTimeSync()) robot_->SyncTime();
-            double min_time = (goal->minimum_time > 0.01) ? goal->minimum_time : robot_parameter_.minimum_time;
-
-            // Ensure Control Manager is ready before sending any command
-            if (!this->check_controll_manager()) {
-                RCLCPP_ERROR(this->get_logger(), "Control Manager not ready for MultiJointCommand.");
-                result->success = false;
-                result->finish_code = "Control Manager Error";
-                goal_handle->abort(result);
-                return;
-            }
-
-            rb::ComponentBasedCommandBuilder component_cmd_builder;
-            rb::BodyComponentBasedCommandBuilder body_comp;
-            
-            if (use_torso) apply_body_builder(body_comp, "torso", goal->torso, min_time);
-            if (use_right_arm) apply_body_builder(body_comp, "right_arm", goal->right_arm, min_time);
-            if (use_left_arm) apply_body_builder(body_comp, "left_arm", goal->left_arm, min_time);
-
-            if (use_torso || use_right_arm || use_left_arm) {
-                rb::BodyCommandBuilder body_builder;
-                body_builder.SetCommand(body_comp);
-                component_cmd_builder.SetBodyCommand(body_builder);
-            }
-
-            if (use_head) {
-                if (auto head_comp = apply_head_builder(goal->head, min_time)) {
-                    component_cmd_builder.SetHeadCommand(*head_comp);
-                }
-            }
-
-            auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
-            
-            rclcpp::Rate rate(10);
-            while (rclcpp::ok() && !cmd_handler->IsDone()) {
-                if (goal_handle->is_canceling()) {
-                    cmd_handler->Cancel();
-                    result->success = false;
-                    result->finish_code = "kCanceled";
-                    goal_handle->canceled(result);
-                    return;
-                }
-
-                auto cm_state = robot_->GetControlManagerState();
-                if (cm_state.state == rb::ControlManagerState::State::kMajorFault ||
-                    cm_state.state == rb::ControlManagerState::State::kMinorFault) {
-                    cmd_handler->Cancel();
-                    result->success = false;
-                    result->finish_code = "Fault Detected";
-                    goal_handle->abort(result);
-                    return;
-                }
-
-                auto feedback = std::make_shared<MultiJointCommand::Feedback>();
-                feedback->current_state = "excuting";
-                goal_handle->publish_feedback(feedback);
-                rate.sleep();
-            }
-
-            if (rclcpp::ok()) {
-                auto rv = cmd_handler->Get();
-                result->finish_code = this->finish_code_to_string(rv.finish_code());
-                
-                // If we manually canceled via service, override the potentially vague SDK code
-                if (is_control_canceled_) {
-                    result->finish_code = "kCanceled";
-                }
-                
-                RCLCPP_INFO(this->get_logger(), "MultiJointCommand finished with code: %s", result->finish_code.c_str());
-                result->success = (result->finish_code == "kOk");
-                
-                if (result->success) {
-                    goal_handle->succeed(result);
-                } else {
-                    goal_handle->abort(result);
-                    RCLCPP_INFO(this->get_logger(), "MultiJointCommand failed. Attempting to recover control manager...");
-                    this->check_controll_manager();
-                }
-            }
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Exception in MultiJointCommand: %s", e.what());
-            result->success = false;
-            result->finish_code = "kError";
-            goal_handle->abort(result);
-            this->check_controll_manager();
-        }
-    }
-
-    // --- SingleJointCommand Handlers ---
-    template <typename ModelType>
-    rclcpp_action::GoalResponse RBY1_ROS2_DRIVER<ModelType>::handle_single_goal(
-        const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const SingleJointCommand::Goal> goal) {
-        RCLCPP_INFO(this->get_logger(), "Received SingleJointCommand request");
-        (void)uuid;
-
-        BuilderConfig* target_bcfg = nullptr;
-        if (goal->target_name == "torso") target_bcfg = &torso_builder_;
-        else if (goal->target_name == "right_arm") target_bcfg = &right_arm_builder_;
-        else if (goal->target_name == "left_arm") target_bcfg = &left_arm_builder_;
-        else if (goal->target_name == "head") target_bcfg = &head_builder_;
-        else if (goal->target_name == "mobile") {
-            // Mobile does not use BuilderConfig currently
-        } else {
-            RCLCPP_ERROR(this->get_logger(), "Unknown target_name: %s", goal->target_name.c_str());
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-
-        if (target_bcfg && !target_bcfg->is_configured) {
-            RCLCPP_ERROR(this->get_logger(), "Control mode for %s is not configured. Call SetControlMode service first.", goal->target_name.c_str());
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-
-        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-    }
-
-    template <typename ModelType>
-    rclcpp_action::CancelResponse RBY1_ROS2_DRIVER<ModelType>::handle_single_cancel(
-        const std::shared_ptr<rclcpp_action::ServerGoalHandle<SingleJointCommand>> goal_handle) {
-        RCLCPP_INFO(this->get_logger(), "Received request to cancel SingleJointCommand goal");
-        (void)goal_handle;
-        return rclcpp_action::CancelResponse::ACCEPT;
-    }
-
-    template <typename ModelType>
-    void RBY1_ROS2_DRIVER<ModelType>::handle_single_accepted(
-        const std::shared_ptr<rclcpp_action::ServerGoalHandle<SingleJointCommand>> goal_handle) {
-        using namespace std::placeholders;
-        std::thread{std::bind(&RBY1_ROS2_DRIVER<ModelType>::execute_single_command, this, _1), goal_handle}.detach();
-    }
-
-    template <typename ModelType>
-    void RBY1_ROS2_DRIVER<ModelType>::execute_single_command(
-        const std::shared_ptr<rclcpp_action::ServerGoalHandle<SingleJointCommand>> goal_handle) {
-        is_control_canceled_ = false;
-        const auto goal = goal_handle->get_goal();
-        auto result = std::make_shared<SingleJointCommand::Result>();
-
-        if (goal->position.empty() || goal->target_name.empty()) {
-            RCLCPP_WARN(this->get_logger(), "Invalid SingleJointCommand data.");
-            result->success = false;
-            result->finish_code = "Invalid arguments";
-            goal_handle->abort(result);
-            return;
-        }
-
-        if (!robot_->HasEstablishedTimeSync()) robot_->SyncTime();
-
-        double min_time = (goal->minimum_time > 0.01) ? goal->minimum_time : robot_parameter_.minimum_time;
-
-        if (goal->target_name != "torso" && goal->target_name != "right_arm" && 
-            goal->target_name != "left_arm" && goal->target_name != "head") {
-            RCLCPP_WARN(this->get_logger(), "Unknown target name in SingleJointCommand: %s", goal->target_name.c_str());
-            result->success = false;
-            result->finish_code = "Unknown target name";
-            goal_handle->abort(result);
-            return;
-        }
-
-        rb::ComponentBasedCommandBuilder component_cmd_builder;
-        rb::BodyComponentBasedCommandBuilder body_comp;
-        
-        if (goal->target_name == "head") {
-            if (auto head_comp = apply_head_builder(goal->position, min_time)) {
-                component_cmd_builder.SetHeadCommand(*head_comp);
-            }
-        } else if (goal->target_name == "torso" || goal->target_name == "right_arm" || goal->target_name == "left_arm") {
-            apply_body_builder(body_comp, goal->target_name, goal->position, min_time);
-            component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
-        }
-
-        auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
-        
-        rclcpp::Rate rate(10);
-        while (rclcpp::ok() && !cmd_handler->IsDone()) {
-            if (goal_handle->is_canceling()) {
-                cmd_handler->Cancel();
-                result->success = false;
-                result->finish_code = "kCanceled";
-                goal_handle->canceled(result);
-                return;
-            }
-
-            auto cm_state = robot_->GetControlManagerState();
-            if (cm_state.state == rb::ControlManagerState::State::kMajorFault ||
-                cm_state.state == rb::ControlManagerState::State::kMinorFault) {
-                cmd_handler->Cancel();
-                result->success = false;
-                result->finish_code = "Fault Detected";
-                goal_handle->abort(result);
-                return;
-            }
-
-            auto feedback = std::make_shared<SingleJointCommand::Feedback>();
-            feedback->current_state = "excuting";
-            goal_handle->publish_feedback(feedback);
-            rate.sleep();
-        }
-
-        if (rclcpp::ok()) {
-            auto rv = cmd_handler->Get();
-            result->finish_code = this->finish_code_to_string(rv.finish_code());
-            
-            if (is_control_canceled_) {
-                result->finish_code = "kCanceled";
-            }
-            
-            result->success = (result->finish_code == "kOk");
-            if (result->success) {
-                goal_handle->succeed(result);
-            } else {
-                goal_handle->abort(result);
-                RCLCPP_INFO(this->get_logger(), "SingleJointCommand failed. Attempting to recover control manager...");
-                this->check_controll_manager();
-            }
-        }
-    }
 
 
 
@@ -1312,6 +858,527 @@ namespace rby1_ros2{
         goal_handle->succeed(result);
     }
 
+    // --- Rby1 Joint Command Handlers ---
+    template <typename ModelType>
+    rclcpp_action::GoalResponse RBY1_ROS2_DRIVER<ModelType>::handle_rby1_joint_goal(
+        const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Rby1JointCommand::Goal> goal) {
+        RCLCPP_INFO(this->get_logger(), "Received Rby1JointCommand request");
+        (void)uuid;
+        (void)goal; // We will do validation in execute
+        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }
+
+    template <typename ModelType>
+    rclcpp_action::CancelResponse RBY1_ROS2_DRIVER<ModelType>::handle_rby1_joint_cancel(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<Rby1JointCommand>> goal_handle) {
+        RCLCPP_INFO(this->get_logger(), "Received request to cancel Rby1JointCommand goal");
+        (void)goal_handle;
+        robot_->CancelControl();
+        return rclcpp_action::CancelResponse::ACCEPT;
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::handle_rby1_joint_accepted(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<Rby1JointCommand>> goal_handle) {
+        using namespace std::placeholders;
+        std::thread{std::bind(&RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command, this, _1), goal_handle}.detach();
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<Rby1JointCommand>> goal_handle) {
+        is_control_canceled_ = false;
+        const auto goal = goal_handle->get_goal();
+        auto result = std::make_shared<Rby1JointCommand::Result>();
+
+        try {
+            auto cm_state_val = robot_->GetControlManagerState().state;
+            bool is_ready = (cm_state_val == rb::ControlManagerState::State::kEnabled);
+            if (!is_ready) {
+                try {
+                    is_ready = robot_->IsPowerOn(".*") && robot_->IsServoOn(".*");
+                } catch (...) {
+                    is_ready = false;
+                }
+            }
+
+            if (!is_ready) {
+                result->success = false;
+                result->finish_code = "Robot is disabled (power/servo is off)";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Joint command rejected: Robot is disabled (power/servo is off).\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+
+            if (!goal->torso.position.empty() && gravity_compensation_torso_) {
+                result->success = false;
+                result->finish_code = "Torso is in Gravity Compensation mode!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Joint command rejected: Torso is in Gravity Compensation mode!\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+            if (!goal->right_arm.position.empty() && gravity_compensation_right_arm_) {
+                result->success = false;
+                result->finish_code = "Right arm is in Gravity Compensation mode!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Joint command rejected: Right arm is in Gravity Compensation mode!\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+            if (!goal->left_arm.position.empty() && gravity_compensation_left_arm_) {
+                result->success = false;
+                result->finish_code = "Left arm is in Gravity Compensation mode!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Joint command rejected: Left arm is in Gravity Compensation mode!\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+
+            if (!robot_->HasEstablishedTimeSync()) robot_->SyncTime();
+
+            if (!this->check_controll_manager()) {
+                RCLCPP_ERROR(this->get_logger(), "\033[1;31m[CONTROL MANAGER ERROR] Control Manager not ready for Rby1JointCommand.\033[0m");
+                result->success = false;
+                result->finish_code = "Control Manager Error";
+                goal_handle->abort(result);
+                return;
+            }
+
+            const auto& cm_state = robot_->GetControlManagerState();
+            if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
+                cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL WARNING] Robot is moving. Canceling current control before sending new joint command...\033[0m");
+                robot_->CancelControl();
+            }
+
+            rb::ComponentBasedCommandBuilder component_cmd_builder;
+            rb::BodyComponentBasedCommandBuilder body_comp;
+            bool use_body = false;
+            bool use_head = false;
+
+            auto process_part = [&](const rby1_msgs::msg::JointCommand& cmd, const std::string& part_name, size_t expected_dof, std::string& err_msg) -> bool {
+                if (cmd.position.empty()) return true; // Ignore empty parts
+
+                Eigen::VectorXd q = Eigen::Map<const Eigen::VectorXd>(cmd.position.data(), cmd.position.size());
+
+                if (cmd.use_group_joint && part_name == "torso") {
+                    if (cmd.joint_names.empty()) {
+                        err_msg = "Empty Joint Names: " + part_name + " joint_names cannot be empty when use_group_joint is True.";
+                        RCLCPP_ERROR(this->get_logger(), "%s", err_msg.c_str());
+                        return false;
+                    }
+                    if (cmd.position.size() != cmd.joint_names.size()) {
+                        err_msg = "Invalid Array Size: " + part_name + " position size (" + std::to_string(cmd.position.size()) + ") must match joint_names size (" + std::to_string(cmd.joint_names.size()) + ") for Joint Group Control.";
+                        RCLCPP_ERROR(this->get_logger(), "%s", err_msg.c_str());
+                        return false;
+                    }
+                    auto b = rb::JointGroupPositionCommandBuilder();
+                    b.SetJointNames(cmd.joint_names);
+                    b.SetPosition(q);
+                    b.SetMinimumTime(cmd.minimum_time);
+                    body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+                    use_body = true;
+                    return true;
+                }
+
+                if (cmd.use_group_joint) {
+                    RCLCPP_WARN(this->get_logger(), "Joint group control is only supported for torso. Falling back to standard control for %s", part_name.c_str());
+                }
+
+                if (cmd.position.size() != expected_dof) {
+                    err_msg = "Invalid Array Size: " + part_name + " position requires " + std::to_string(expected_dof) + " elements, got " + std::to_string(cmd.position.size());
+                    RCLCPP_ERROR(this->get_logger(), "%s", err_msg.c_str());
+                    return false;
+                }
+
+                if (cmd.use_impedance) {
+                    if (part_name == "head") {
+                        RCLCPP_WARN(this->get_logger(), "Head does not support impedance control. Falling back to joint position control.");
+                        auto b = rb::JointPositionCommandBuilder();
+                        b.SetMinimumTime(cmd.minimum_time);
+                        b.SetPosition(q);
+                        component_cmd_builder.SetHeadCommand(rb::HeadCommandBuilder(b));
+                        use_head = true;
+                    } else {
+                        auto b = rb::JointImpedanceControlCommandBuilder();
+                        b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(cmd.control_hold_time));
+                        b.SetPosition(q);
+                        b.SetMinimumTime(cmd.minimum_time);
+                        
+                        std::vector<double> stiffness = cmd.stiffness;
+                        if (stiffness.empty()) stiffness.assign(expected_dof, 100.0);
+                        else if (stiffness.size() != expected_dof) {
+                            err_msg = "Invalid Array Size: " + part_name + " stiffness requires " + std::to_string(expected_dof) + " elements, got " + std::to_string(stiffness.size());
+                            RCLCPP_ERROR(this->get_logger(), "%s", err_msg.c_str());
+                            return false;
+                        }
+                        b.SetStiffness(Eigen::Map<const Eigen::VectorXd>(stiffness.data(), stiffness.size()));
+                        b.SetDampingRatio(cmd.damping_ratio);
+                        b.SetTorqueLimit(Eigen::VectorXd::Constant(expected_dof, cmd.torque_limit));
+
+                        if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+                        else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
+                        else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+                        use_body = true;
+                    }
+                } else {
+                    auto b = rb::JointPositionCommandBuilder();
+                    b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(cmd.control_hold_time));
+                    b.SetPosition(q);
+                    b.SetMinimumTime(cmd.minimum_time);
+                    
+                    if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+                    else if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
+                    else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+                    else if (part_name == "head") {
+                        component_cmd_builder.SetHeadCommand(rb::HeadCommandBuilder(b));
+                        use_head = true;
+                        return true;
+                    }
+                    use_body = true;
+                }
+                return true;
+            };
+
+            std::string err_msg;
+
+            if (!process_part(goal->torso, "torso", info_.torso_joint_idx.size(), err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+            if (!process_part(goal->right_arm, "right_arm", info_.right_arm_joint_idx.size(), err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+            if (!process_part(goal->left_arm, "left_arm", info_.left_arm_joint_idx.size(), err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+            if (!process_part(goal->head, "head", info_.head_joint_idx.size(), err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+
+            if (!use_body && !use_head) {
+                RCLCPP_WARN(this->get_logger(), "Received empty Rby1JointCommand goal.");
+                result->success = false;
+                result->finish_code = "Empty arrays";
+                goal_handle->abort(result);
+                return;
+            }
+
+            if (use_body) {
+                component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
+            }
+
+            auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder), goal->priority);
+            
+            rclcpp::Rate rate(10);
+            while (rclcpp::ok() && !cmd_handler->IsDone()) {
+                if (goal_handle->is_canceling()) {
+                    cmd_handler->Cancel();
+                    result->success = false;
+                    result->finish_code = "kCanceled";
+                    goal_handle->canceled(result);
+                    return;
+                }
+
+                auto cm_state = robot_->GetControlManagerState();
+                if (cm_state.state == rb::ControlManagerState::State::kMajorFault ||
+                    cm_state.state == rb::ControlManagerState::State::kMinorFault) {
+                    cmd_handler->Cancel();
+                    result->success = false;
+                    result->finish_code = "Fault Detected";
+                    goal_handle->abort(result);
+                    return;
+                }
+
+                auto feedback = std::make_shared<Rby1JointCommand::Feedback>();
+                feedback->current_state = "excuting";
+                goal_handle->publish_feedback(feedback);
+                rate.sleep();
+            }
+
+            if (rclcpp::ok()) {
+                auto rv = cmd_handler->Get();
+                result->finish_code = this->finish_code_to_string(rv.finish_code());
+                
+                if (is_control_canceled_) result->finish_code = "kCanceled";
+                
+                RCLCPP_INFO(this->get_logger(), "Rby1JointCommand finished with code: %s", result->finish_code.c_str());
+                result->success = (result->finish_code == "kOk");
+                
+                if (result->success) {
+                    goal_handle->succeed(result);
+                } else {
+                    goal_handle->abort(result);
+                    RCLCPP_INFO(this->get_logger(), "Rby1JointCommand failed. Attempting to recover control manager...");
+                    this->check_controll_manager();
+                }
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Exception in Rby1JointCommand: %s", e.what());
+            result->success = false;
+            result->finish_code = "kError";
+            goal_handle->abort(result);
+            this->check_controll_manager();
+        }
+    }
+
+    // --- Rby1 Cartesian Command Handlers ---
+    template <typename ModelType>
+    rclcpp_action::GoalResponse RBY1_ROS2_DRIVER<ModelType>::handle_rby1_cartesian_goal(
+        const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const Rby1CartesianCommand::Goal> goal) {
+        RCLCPP_INFO(this->get_logger(), "Received Rby1CartesianCommand request");
+        (void)uuid;
+        (void)goal;
+        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }
+
+    template <typename ModelType>
+    rclcpp_action::CancelResponse RBY1_ROS2_DRIVER<ModelType>::handle_rby1_cartesian_cancel(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<Rby1CartesianCommand>> goal_handle) {
+        RCLCPP_INFO(this->get_logger(), "Received request to cancel Rby1CartesianCommand goal");
+        (void)goal_handle;
+        robot_->CancelControl();
+        return rclcpp_action::CancelResponse::ACCEPT;
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::handle_rby1_cartesian_accepted(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<Rby1CartesianCommand>> goal_handle) {
+        using namespace std::placeholders;
+        std::thread{std::bind(&RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command, this, _1), goal_handle}.detach();
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
+        const std::shared_ptr<rclcpp_action::ServerGoalHandle<Rby1CartesianCommand>> goal_handle) {
+        is_control_canceled_ = false;
+        const auto goal = goal_handle->get_goal();
+        auto result = std::make_shared<Rby1CartesianCommand::Result>();
+
+        try {
+            auto cm_state_val = robot_->GetControlManagerState().state;
+            bool is_ready = (cm_state_val == rb::ControlManagerState::State::kEnabled);
+            if (!is_ready) {
+                try {
+                    is_ready = robot_->IsPowerOn(".*") && robot_->IsServoOn(".*");
+                } catch (...) {
+                    is_ready = false;
+                }
+            }
+
+            if (!is_ready) {
+                result->success = false;
+                result->finish_code = "Robot is disabled (power/servo is off)";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Cartesian command rejected: Robot is disabled (power/servo is off).\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+
+            if ((!goal->torso.ref_link.empty() || !goal->torso.target_link.empty()) && gravity_compensation_torso_) {
+                result->success = false;
+                result->finish_code = "Torso is in Gravity Compensation mode!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Cartesian command rejected: Torso is in Gravity Compensation mode!\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+            if ((!goal->right_arm.ref_link.empty() || !goal->right_arm.target_link.empty()) && gravity_compensation_right_arm_) {
+                result->success = false;
+                result->finish_code = "Right arm is in Gravity Compensation mode!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Cartesian command rejected: Right arm is in Gravity Compensation mode!\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+            if ((!goal->left_arm.ref_link.empty() || !goal->left_arm.target_link.empty()) && gravity_compensation_left_arm_) {
+                result->success = false;
+                result->finish_code = "Left arm is in Gravity Compensation mode!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL REJECTED] Cartesian command rejected: Left arm is in Gravity Compensation mode!\033[0m");
+                goal_handle->abort(result);
+                return;
+            }
+
+            if (!robot_->HasEstablishedTimeSync()) robot_->SyncTime();
+
+            if (!this->check_controll_manager()) {
+                RCLCPP_ERROR(this->get_logger(), "\033[1;31m[CONTROL MANAGER ERROR] Control Manager not ready for Rby1CartesianCommand.\033[0m");
+                result->success = false;
+                result->finish_code = "Control Manager Error";
+                goal_handle->abort(result);
+                return;
+            }
+
+            const auto& cm_state = robot_->GetControlManagerState();
+            if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
+                cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL WARNING] Robot is moving. Canceling current control before sending new cartesian command...\033[0m");
+                robot_->CancelControl();
+            }
+
+            rb::ComponentBasedCommandBuilder component_cmd_builder;
+            rb::BodyComponentBasedCommandBuilder body_comp;
+            bool use_body = false;
+
+            auto process_part = [&](const rby1_msgs::msg::CartesianCommand& cmd, const std::string& part_name, std::string& err_msg) -> bool {
+                if (cmd.ref_link.empty() && cmd.target_link.empty()) return true; // Ignore empty parts
+
+                if (cmd.ref_link.empty() || cmd.target_link.empty()) {
+                    err_msg = "Invalid CartesianCommand: Both ref_link and target_link must be provided for " + part_name;
+                    RCLCPP_ERROR(this->get_logger(), "%s", err_msg.c_str());
+                    return false;
+                }
+
+                auto get_weight = [](const std::vector<double>& input, double default_val, const std::string& err_prefix, std::string& err) -> std::optional<Eigen::Vector3d> {
+                    if (input.empty()) return Eigen::Vector3d(default_val, default_val, default_val);
+                    if (input.size() != 3) {
+                        err = err_prefix + " requires 3 elements, got " + std::to_string(input.size());
+                        return std::nullopt;
+                    }
+                    return Eigen::Vector3d(input[0], input[1], input[2]);
+                };
+
+                auto t_weight = get_weight(cmd.translation_weight, 1000.0, "Invalid Array Size: " + part_name + " translation_weight", err_msg);
+                if (!t_weight) return false;
+
+                auto r_weight = get_weight(cmd.rotation_weight, 100.0, "Invalid Array Size: " + part_name + " rotation_weight", err_msg);
+                if (!r_weight) return false;
+
+                Eigen::Quaterniond q(cmd.transform.rotation.w, cmd.transform.rotation.x, cmd.transform.rotation.y, cmd.transform.rotation.z);
+                Eigen::Vector3d t(cmd.transform.translation.x, cmd.transform.translation.y, cmd.transform.translation.z);
+                
+                rb::math::SE3::MatrixType T = rb::math::SE3::MatrixType::Identity();
+                T.block(0, 0, 3, 3) = q.toRotationMatrix();
+                T.block(0, 3, 3, 1) = t;
+
+                if (cmd.use_impedance) {
+                    auto b = rb::ImpedanceControlCommandBuilder();
+                    b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(cmd.control_hold_time));
+                    b.SetReferenceLinkName(cmd.ref_link);
+                    b.SetLinkName(cmd.target_link);
+                    b.SetTranslationWeight(*t_weight);
+                    b.SetRotationWeight(*r_weight);
+                    b.SetTransformation(T);
+
+                    if (cmd.add_joint_position_target) {
+                        RCLCPP_WARN(this->get_logger(), "add_joint_position_target is not supported for Cartesian Impedance Control in this SDK version. Ignoring for %s", part_name.c_str());
+                    }
+                    
+                    if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
+                    else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+                    else if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+                    
+                    use_body = true;
+                    return true;
+                } else {
+                    auto b = rb::CartesianCommandBuilder();
+                    b.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(cmd.control_hold_time));
+                    b.SetMinimumTime(cmd.minimum_time);
+                    b.AddTarget(cmd.ref_link, cmd.target_link, T, cmd.linear_velocity_limit, cmd.angular_velocity_limit, cmd.acceleration_limit_scaling);
+                    b.SetStopPositionTrackingError(goal->stop_position_tracking_error);
+                    b.SetStopOrientationTrackingError(goal->stop_orientation_tracking_error);
+
+                    if (cmd.add_joint_position_target) {
+                        b.AddJointPositionTarget(cmd.add_joint_name, cmd.add_joint_value);
+                    }
+                    
+                    if (part_name == "right_arm") body_comp.SetRightArmCommand(rb::ArmCommandBuilder(b));
+                    else if (part_name == "left_arm") body_comp.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+                    else if (part_name == "torso") body_comp.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+                    
+                    use_body = true;
+                    return true;
+                }
+            };
+
+            std::string err_msg;
+
+            if (!process_part(goal->torso, "torso", err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+            if (!process_part(goal->right_arm, "right_arm", err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+            if (!process_part(goal->left_arm, "left_arm", err_msg)) {
+                result->success = false;
+                result->finish_code = err_msg;
+                goal_handle->abort(result);
+                return;
+            }
+
+            if (!use_body) {
+                RCLCPP_WARN(this->get_logger(), "Received empty Rby1CartesianCommand goal.");
+                result->success = false;
+                result->finish_code = "Empty targets";
+                goal_handle->abort(result);
+                return;
+            }
+
+            component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
+
+            auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder), goal->priority);
+            
+            rclcpp::Rate rate(10);
+            while (rclcpp::ok() && !cmd_handler->IsDone()) {
+                if (goal_handle->is_canceling()) {
+                    cmd_handler->Cancel();
+                    result->success = false;
+                    result->finish_code = "kCanceled";
+                    goal_handle->canceled(result);
+                    return;
+                }
+
+                auto cm_state = robot_->GetControlManagerState();
+                if (cm_state.state == rb::ControlManagerState::State::kMajorFault ||
+                    cm_state.state == rb::ControlManagerState::State::kMinorFault) {
+                    cmd_handler->Cancel();
+                    result->success = false;
+                    result->finish_code = "Fault Detected";
+                    goal_handle->abort(result);
+                    return;
+                }
+
+                rate.sleep();
+            }
+
+            if (rclcpp::ok()) {
+                auto rv = cmd_handler->Get();
+                result->finish_code = this->finish_code_to_string(rv.finish_code());
+                
+                if (is_control_canceled_) result->finish_code = "kCanceled";
+                
+                RCLCPP_INFO(this->get_logger(), "Rby1CartesianCommand finished with code: %s", result->finish_code.c_str());
+                result->success = (result->finish_code == "kOk");
+                
+                if (result->success) {
+                    goal_handle->succeed(result);
+                } else {
+                    goal_handle->abort(result);
+                    RCLCPP_INFO(this->get_logger(), "Rby1CartesianCommand failed. Attempting to recover control manager...");
+                    this->check_controll_manager();
+                }
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Exception in Rby1CartesianCommand: %s", e.what());
+            result->success = false;
+            result->finish_code = "kError";
+            goal_handle->abort(result);
+            this->check_controll_manager();
+        }
+    }
+
     template <typename ModelType>
     void RBY1_ROS2_DRIVER<ModelType>::resize_joint_states(){
         constexpr size_t kTorsoDOF    = 6;
@@ -1336,6 +1403,156 @@ namespace rby1_ros2{
             else if (model == "m" || model == "M") kMobilityDOF = 4;
         }
         resize_js(robot_joint_.joint_wheel, kMobilityDOF);
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::get_cartesian_pose_callback(
+        const std::shared_ptr<rby1_msgs::srv::GetCartesianPose::Request> request,
+        std::shared_ptr<rby1_msgs::srv::GetCartesianPose::Response> response) {
+        
+        if (!dynamics_ || !dyn_state_) {
+            RCLCPP_ERROR(this->get_logger(), "Dynamics model not loaded. Cannot get cartesian pose.");
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        try {
+            auto state = robot_->GetState();
+            Eigen::Vector<double, ModelType::kRobotDOF> q = Eigen::Vector<double, ModelType::kRobotDOF>::Zero();
+            auto dyn_joint_names = dyn_state_->GetJointNames();
+            for (int i = 0; i < (int)dyn_joint_names.size(); ++i) {
+                std::string name(dyn_joint_names[i]);
+                for (size_t j = 0; j < info_.joint_infos.size(); ++j) {
+                    if (info_.joint_infos[j].name == name) {
+                        q[i] = state.position[j];
+                        break;
+                    }
+                }
+            }
+            
+            dyn_state_->SetQ(q);
+            dynamics_->ComputeForwardKinematics(dyn_state_);
+
+            std::string ref = request->ref_link;
+            std::string target = request->target_link;
+
+            auto it_ref = std::find(dyn_link_names_.begin(), dyn_link_names_.end(), ref);
+            auto it_target = std::find(dyn_link_names_.begin(), dyn_link_names_.end(), target);
+            
+            if (it_ref != dyn_link_names_.end() && it_target != dyn_link_names_.end()) {
+                int ref_idx = std::distance(dyn_link_names_.begin(), it_ref);
+                int target_idx = std::distance(dyn_link_names_.begin(), it_target);
+                
+                auto T = dynamics_->ComputeTransformation(dyn_state_, ref_idx, target_idx);
+                
+                geometry_msgs::msg::Transform transform;
+                transform.translation.x = T(0, 3);
+                transform.translation.y = T(1, 3);
+                transform.translation.z = T(2, 3);
+                Eigen::Matrix3d R = T.block(0, 0, 3, 3);
+                Eigen::Quaterniond q_rot(R);
+                transform.rotation.x = q_rot.x();
+                transform.rotation.y = q_rot.y();
+                transform.rotation.z = q_rot.z();
+                transform.rotation.w = q_rot.w();
+                
+                response->transform = transform;
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "Link name not found in dynamics model. Ref: %s, Target: %s", ref.c_str(), target.c_str());
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Error in get_cartesian_pose: %s", e.what());
+        }
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::control_manager_callback(
+        const std::shared_ptr<rby1_msgs::srv::ControlManagerCommand::Request> request,
+        std::shared_ptr<rby1_msgs::srv::ControlManagerCommand::Response> response) {
+        
+        try {
+            if (request->command == rby1_msgs::srv::ControlManagerCommand::Request::CMD_ENABLE) {
+                RCLCPP_INFO(this->get_logger(), "Received Control Manager ENABLE request");
+                if (robot_->EnableControlManager()) {
+                    response->success = true;
+                    response->message = "Control Manager enabled successfully.";
+                } else {
+                    response->success = false;
+                    response->message = "Failed to enable Control Manager.";
+                }
+            } else if (request->command == rby1_msgs::srv::ControlManagerCommand::Request::CMD_DISABLE) {
+                RCLCPP_INFO(this->get_logger(), "Received Control Manager DISABLE request");
+                if (robot_->DisableControlManager()) {
+                    response->success = true;
+                    response->message = "Control Manager disabled successfully.";
+                } else {
+                    response->success = false;
+                    response->message = "Failed to disable Control Manager.";
+                }
+            } else if (request->command == rby1_msgs::srv::ControlManagerCommand::Request::CMD_RESET) {
+                RCLCPP_INFO(this->get_logger(), "Received Control Manager RESET request");
+                if (robot_->ResetFaultControlManager()) {
+                    response->success = true;
+                    response->message = "Control Manager reset successfully.";
+                } else {
+                    response->success = false;
+                    response->message = "Failed to reset Control Manager.";
+                }
+            } else {
+                response->success = false;
+                response->message = "Invalid command type provided.";
+                RCLCPP_ERROR(this->get_logger(), "Control Manager command: Invalid command type %d", request->command);
+            }
+        } catch (const std::exception& e) {
+            response->success = false;
+            response->message = std::string("Exception occurred: ") + e.what();
+            RCLCPP_ERROR(this->get_logger(), "Control Manager exception: %s", e.what());
+        }
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::motor_brake_callback(
+        const std::shared_ptr<rby1_msgs::srv::StateOnOff::Request> request,
+        std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response) {
+        
+        try {
+            // Check control manager state (Brakes can only be changed when IDLE)
+            const auto& cm_state = robot_->GetControlManagerState();
+            if (cm_state.state != rb::ControlManagerState::State::kIdle) {
+                response->success = false;
+                response->message = "Brakes can only be engaged/released when the Control Manager is in IDLE/DISABLED state!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[BRAKE REJECTED] Brake command rejected: Robot is not in IDLE state.\033[0m");
+                return;
+            }
+
+            if (request->parameters.empty()) {
+                response->success = false;
+                response->message = "Joint/Device name parameter is required!";
+                RCLCPP_ERROR(this->get_logger(), "[BRAKE ERROR] Joint/Device name is empty.");
+                return;
+            }
+
+            bool op_success = false;
+            if (request->state) {
+                RCLCPP_INFO(this->get_logger(), "Received Brake ENGAGE request for joint: %s", request->parameters.c_str());
+                op_success = robot_->BrakeEngage(request->parameters);
+            } else {
+                RCLCPP_INFO(this->get_logger(), "Received Brake RELEASE request for joint: %s", request->parameters.c_str());
+                op_success = robot_->BrakeRelease(request->parameters);
+            }
+
+            if (op_success) {
+                response->success = true;
+                response->message = std::string("Brake command executed successfully for ") + request->parameters;
+            } else {
+                response->success = false;
+                response->message = std::string("Failed to execute brake command for ") + request->parameters;
+            }
+        } catch (const std::exception& e) {
+            response->success = false;
+            response->message = std::string("Exception occurred: ") + e.what();
+            RCLCPP_ERROR(this->get_logger(), "Brake command exception: %s", e.what());
+        }
     }
 
     // Explicit template instantiations

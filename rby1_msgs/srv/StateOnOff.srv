@@ -1,5 +1,13 @@
+# Service Request definition
+# Target power or state command (True for ON, False for OFF)
 bool state
+
+# Optional parameter string mapping target components or configs
 string parameters
 ---
+# Service Response definition
+# True if state transition executed successfully, False otherwise
 bool success
+
+# Descriptive log or error details
 string message

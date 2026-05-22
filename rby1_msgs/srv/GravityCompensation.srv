@@ -1,0 +1,10 @@
+# Service Request definition
+# Target robot component name (e.g. torso, right_arm, left_arm)
+string part_name
+
+# Target gravity compensation state (True to enable, False to disable)
+bool state false
+---
+# Service Response definition
+# True if state toggle succeeded, False if rejected (e.g. active safety locks active)
+bool response

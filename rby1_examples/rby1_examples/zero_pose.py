@@ -1,24 +1,48 @@
 #!/usr/bin/env python3
+"""
+Zero Pose Example
+=================
+Moves all joints of the RBY1 robot to the zero position (0 rad) simultaneously.
+This is a basic "home" position example and a good starting point for verifying
+that all actuators respond correctly to joint position commands.
+
+Sequence:
+  1. Check robot state; power on and servo on if not already active.
+  2. Send a whole-body JointPositionCommand with all positions set to 0.0 rad.
+  3. Wait for the action to complete and report the result.
+
+Run:
+  ros2 run rby1_examples zero_pose
+
+Actions used:
+  - robot_joint  (Rby1JointCommand)
+
+Services used:
+  - robot_power  (StateOnOff)
+  - robot_servo  (StateOnOff)
+
+Topics subscribed:
+  - joint_states/robot_state  (RobotState)
+"""
 import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from rby1_msgs.action import MultiJointCommand
-from rby1_msgs.srv import StateOnOff, ControlMode
-from std_msgs.msg import Int32
+from rby1_msgs.action import Rby1JointCommand
+from rby1_msgs.msg import JointCommand, RobotState
+from rby1_msgs.srv import StateOnOff
 
 class ZeroPoseExample(Node):
     def __init__(self):
         super().__init__('zero_pose_example')
-        self._action_client = ActionClient(self, MultiJointCommand, 'joint_states/multi_position_command')
+        self._action_client = ActionClient(self, Rby1JointCommand, 'robot_joint')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
-        self.control_mode_client = self.create_client(ControlMode, 'set_control_mode')
-        self.state_sub = self.create_subscription(Int32, 'joint_states/control_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):
-        self.control_state = msg.data
+        self.control_state = msg.control_manager_state
 
     def wait_for_state(self, target_states, timeout=5.0):
         start_time = self.get_clock().now()
@@ -71,22 +95,30 @@ class ZeroPoseExample(Node):
             self.get_logger().error(f'Timed out waiting for robot to enable. Current state: {self.control_state}')
             return False
 
-    def send_control_mode_request(self, part_name, control_type):
-        req = ControlMode.Request()
-        req.part_name = part_name
-        req.control_type = control_type
-        self.control_mode_client.wait_for_service()
-        future = self.control_mode_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        return future.result()
-
     def send_goal(self, torso_pos, right_pos, left_pos, head_pos, minimum_time):
-        goal_msg = MultiJointCommand.Goal()
-        goal_msg.torso = torso_pos
-        goal_msg.right_arm = right_pos
-        goal_msg.left_arm = left_pos
-        goal_msg.head = head_pos
-        goal_msg.minimum_time = minimum_time
+        goal_msg = Rby1JointCommand.Goal()
+        
+        if torso_pos is not None:
+            goal_msg.torso = JointCommand()
+            goal_msg.torso.position = torso_pos
+            goal_msg.torso.minimum_time = minimum_time
+            
+        if right_pos is not None:
+            goal_msg.right_arm = JointCommand()
+            goal_msg.right_arm.position = right_pos
+            goal_msg.right_arm.minimum_time = minimum_time
+            
+        if left_pos is not None:
+            goal_msg.left_arm = JointCommand()
+            goal_msg.left_arm.position = left_pos
+            goal_msg.left_arm.minimum_time = minimum_time
+            
+        if head_pos is not None:
+            goal_msg.head = JointCommand()
+            goal_msg.head.position = head_pos
+            goal_msg.head.minimum_time = minimum_time
+
+        goal_msg.priority = 10
 
         self._action_client.wait_for_server()
         self.get_logger().info('Sending Zero Pose Goal...')
@@ -101,15 +133,7 @@ def main(args=None):
         action_client.get_logger().error('Robot initialization failed. Exiting.')
         return
 
-    # 1. Set mode to JOINT_POSITION for all parts
-    action_client.get_logger().info('Setting Control Mode to JOINT_POSITION...')
-    parts = ['torso', 'right_arm', 'left_arm', 'head']
-    for part in parts:
-        action_client.send_control_mode_request(part, ControlMode.Request.JOINT_POSITION)
-
-    time.sleep(0.5)
-
-    # 2. Zero pose values
+    # 1. Zero pose values
     torso_pos = [0.0] * 6
     right_pos = [0.0] * 7
     left_pos = [0.0] * 7

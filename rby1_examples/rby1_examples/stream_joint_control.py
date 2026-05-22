@@ -1,11 +1,40 @@
 #!/usr/bin/env python3
+"""
+Stream Joint Control Example
+============================
+Demonstrates real-time joint trajectory streaming to the RBY1 robot
+using the StreamPosition action. A pre-computed JointTrajectory message
+is sent as a single goal containing all waypoints; the driver then
+interpolates and executes them at the requested timing.
+
+Sequence:
+  1. Ensure robot is powered on and servos are active.
+  2. Move whole body to zero pose (safe starting posture).
+  3. Build a JointTrajectory with 10 waypoints interpolated from
+     zero to a target multi-joint configuration over 5 seconds.
+  4. Send the trajectory via the StreamPosition action.
+  5. Wait for the action to complete and report the result.
+
+Run:
+  ros2 run rby1_examples stream_joint_control
+
+Actions used:
+  - joint_states/stream_position_command  (StreamPosition)
+
+Services used:
+  - robot_power  (StateOnOff)
+  - robot_servo  (StateOnOff)
+
+Topics subscribed:
+  - joint_states/robot_state  (RobotState)
+"""
 import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rby1_msgs.action import StreamPosition, MultiJointCommand
+from rby1_msgs.msg import RobotState
 from rby1_msgs.srv import ControlMode, StateOnOff
-from std_msgs.msg import Int32
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 class StreamJointControl(Node):
@@ -16,11 +45,11 @@ class StreamJointControl(Node):
         self.control_mode_client = self.create_client(ControlMode, 'set_control_mode')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
-        self.state_sub = self.create_subscription(Int32, 'joint_states/control_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):
-        self.control_state = msg.data
+        self.control_state = msg.control_manager_state
 
     def wait_for_state(self, target_states, timeout=5.0):
         start_time = self.get_clock().now()

@@ -1,0 +1,27 @@
+# Action Goal definition
+# Cartesian motion command for the torso
+rby1_msgs/CartesianCommand torso
+
+# Cartesian motion command for the right arm
+rby1_msgs/CartesianCommand right_arm
+
+# Cartesian motion command for the left arm
+rby1_msgs/CartesianCommand left_arm
+
+# Maximum allowable position tracking error to consider goal reached (meters)
+float64 stop_position_tracking_error 1e-5
+
+# Maximum allowable orientation tracking error to consider goal reached (radians)
+float64 stop_orientation_tracking_error 1e-5
+
+# Execution priority of this command (default = 10)
+int32 priority 10
+---
+# Action Result definition
+# True if trajectory finished successfully, False otherwise
+bool success
+
+# Text descriptive finish code (e.g. kOk, kCanceled, kFailed) or fault details
+string finish_code
+---
+# Action Feedback definition

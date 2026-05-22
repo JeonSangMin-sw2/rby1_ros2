@@ -1,0 +1,26 @@
+# Action Goal definition
+# Joint motion command for the torso
+rby1_msgs/JointCommand torso
+
+# Joint motion command for the right arm
+rby1_msgs/JointCommand right_arm
+
+# Joint motion command for the left arm
+rby1_msgs/JointCommand left_arm
+
+# Joint motion command for the head
+rby1_msgs/JointCommand head
+
+# Execution priority of this command (default = 10)
+int32 priority 10
+---
+# Action Result definition
+# True if trajectory finished successfully, False otherwise
+bool success
+
+# Text descriptive finish code (e.g. kOk, kCanceled, kFailed) or fault details
+string finish_code
+---
+# Action Feedback definition
+# General descriptive string for the current execution state
+string current_state

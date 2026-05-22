@@ -1,6 +1,14 @@
+# Action Goal definition
+# Joint trajectory command containing the target waypoints and timings
 trajectory_msgs/JointTrajectory trajectory
 ---
+# Action Result definition
+# True if trajectory streaming finished successfully, False otherwise
 bool success
+
+# Text descriptive finish code (e.g. kOk, kCanceled, kFailed) or fault details
 string finish_code
 ---
+# Action Feedback definition
+# General descriptive string for the current execution state
 string current_state

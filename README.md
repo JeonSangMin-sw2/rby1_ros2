@@ -1,236 +1,325 @@
 # RBY1 ROS 2 Driver Package
 
-## 개요
-- `rby1_ros2`는 Rainbow Robotics의 RBY1 로봇을 ROS 2 환경에서 제어하기 위한 통합 드라이버 패키지입니다. 이 패키지는 로봇의 상태 모니터링부터 다양한 제어 모드(Joint, Cartesian, Impedance 등)를 추상화된 인터페이스를 통해 제공합니다.
-- 사용 버전 : ros2 humble
-- 사용 환경 : ubuntu 22.04
-- 사용가능 로봇 rpc 버전 : 0.10.x 이후
+## Overview
 
+`rby1_ros2` is a unified ROS 2 driver package for controlling the Rainbow Robotics RBY1 robot.  
+It wraps the RBY1 C++ SDK into a ROS 2 node, providing state monitoring and multiple control modes (Joint Position, Cartesian Position, Impedance, Gravity Compensation, and Trajectory Streaming) through a clean action/service/topic interface.
 
-## 1.Quick start
+- **ROS 2 version**: Humble
+- **OS**: Ubuntu 22.04
+- **SDK compatibility**: rby1-sdk `0.10.x` and later
 
-### install ros2 humble
+---
 
-https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html
+## 1. Quick Start
 
-### install rb-y1 docker
+- **If you install in an environment such as conda or miniforge, issues may arise due to Python and CMake path conflicts, so please install it in a local environment.**
 
-https://hub.docker.com/r/rainbowroboticsofficial/rby1-sim
+### 1-1. Install ROS 2 Humble
 
-### additional setting
+<https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html>
+
+### 1-2. Install RBY1 Simulator (Docker)
+
+<https://hub.docker.com/r/rainbowroboticsofficial/rby1-sim>
+
+### 1-3. Environment Setup
+
+Add the following lines to `~/.bashrc`:
+
 ```bash
 sudo nano ~/.bashrc
 
-# 스크롤을 아래로 내리다보면 아래의 문구가 보임
-
-# enable programmable completion features (you don't need to enable
-# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
-# sources /etc/bash.bashrc).
-if ! shopt -oq posix; then
-  if [ -f /usr/share/bash-completion/bash_completion ]; then
-    . /usr/share/bash-completion/bash_completion
-  elif [ -f /etc/bash_completion ]; then
-    . /etc/bash_completion
-  fi
-fi
-# 이 아래에 해당 커맨드 추가
+# Add at the bottom:
 export PATH=/opt/cmake/bin:$PATH
 source /opt/ros/humble/setup.bash
 
-# 종료 후 아래 명령어 사용
+# Apply changes
 source ~/.bashrc
 ```
 
-### how to build
+### 1-4. Build
+
 ```bash
-mkdir rby1_ros2_ws/src
+mkdir -p rby1_ros2_ws/src
 cd rby1_ros2_ws/src
 git clone https://github.com/RainbowRobotics/rby1_ros2.git
 cd ..
 colcon build --symlink-install
+source install/setup.bash
 ```
 
-### set driver_parameters.yaml
-- rby1_driver/config 에 있는 yaml 파일을 통해 로봇의 기본세팅을 할 수 있습니다.
-- 해당 파일에서 연결할 로봇의 ip 와 model 을 선택할 수 있으며, 부부가적인 토픽구성, 기능 트리거를 사용할 수 있습니다.
-- 처음 패키지 빌드당시 symlink 옵션으로 빌드했기에 해당 파일을 수정할 때마다 패키지 빌드를 할 필요는 없습니다.
-- 설정시 사용하고 있는 로봇의 ip와 모델에 맞게 설정해주셔야 합니다.
-- 일반적으로 기능 테스트 시 robot_ip 를 `"127.0.0.1:50051"` 로 하여 시뮬레이션 상에서 확인해보시길 바랍니다.
-- `시뮬레이션에선 일부 상태를 확인하는 예제(battery, tool flange 등)에서 유효하지 않은 값이 나옵니다. 참고하시길 바랍니다.`
+### 1-5. Configure `driver_parameters.yaml`
 
-| 파라미터 | 기본값 | 설명 |
-|---|---|---|
-| `robot_ip` | `"127.0.0.1:50051"` | 로봇 통신 IP 주소 및 포트 |
-| `model` | `"a"` | 로봇 모델 (`"a"` 또는 `"m"`) |
-| `state_topic_name` | `"joint_states"` | 상태 Publisher 및 Action Server의 기본 네임스페이스 |
-| `get_state_period` | `0.01` | 로봇 상태 Publish 주기 (s) |
-| `minimum_time` | `2.0` | 명령 수행 시 기본 최소 실행 시간 (s) |
-| `acceleration_limit` | `1.0` | 로봇 가속도 제한 스케일링 |
-| `collision_threshold` | `0.03` | 충돌 감지 임계값 (m) |
-| `publish_power_state` | `false` | 전원 상태 토픽 활성화 여부 |
-| `publish_tool_flange` | `false` | 툴 플랜지 상태 토픽 활성화 여부 |
-| `publish_torque_velocity` | `false` | 토크 및 속도 상태 토픽 활성화 여부 |
+Located at `rby1_driver/config/driver_parameters.yaml`.  
+Edit this file to match your robot before launching the driver.  
+Because the workspace was built with `--symlink-install`, **no rebuild is needed** after editing.
+
+> **Note**: For simulation testing, keep `robot_ip: "127.0.0.1:50051"`.  
+> Some state values (battery, tool flange FT/IMU) will show zeros in simulation because no physical sensors are attached.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `robot_ip` | `"127.0.0.1:50051"` | Robot IP address and gRPC port |
+| `model` | `"m"` | Robot model — `"a"` (RBY1-A) or `"m"` (RBY1-M) |
+| `state_topic_name` | `"joint_states"` | Namespace prefix for all state topics and action servers |
+| `joint_position_topic_name` | `"robot_joint"` | Action server name for joint position commands |
+| `cartesian_position_topic_name` | `"robot_cartesian"` | Action server name for Cartesian commands |
+| `get_state_period` | `0.01` | State publish interval (seconds) — default 100 Hz |
+| `minimum_time` | `2.0` | Default minimum execution time for motion commands (seconds) |
+| `angular_velocity_limit` | `4.712` | Joint angular velocity limit (rad/s) |
+| `linear_velocity_limit` | `1.5` | Cartesian linear velocity limit (m/s) |
+| `acceleration_limit` | `1.0` | Acceleration scaling factor |
+| `fault_reset_trigger` | `true` | Auto-reset MAJOR/MINOR fault on driver startup |
+| `node_power_off_trigger` | `false` | Power off robot automatically when driver node exits |
+| `collision_enable` | `false` | Enable self-collision detection |
+| `collision_threshold` | `0.01` | Collision detection distance threshold (meters) |
+| `publish_battery_state` | `true` | Enable battery state topic |
+| `publish_tool_flange_state` | `true` | Enable tool flange state topics (left + right) |
+
 ---
 
-### Run sim(optional)
-- 기능테스트를 해보고 싶은 경우, 로봇이 없는 경우 상위에 언급된 docker 파일 설치 이후 원하는 버전에 맞게 시뮬레이션을 실행해주시길 바랍니다.
-- 이때, 로봇의 ip는 "127.0.0.1:50051" 또는 "localhost:50051" 이니 주의하시길 바랍니다.
-- 시뮬레이션의 버전은 명령어 뒷부분 "rby1-sim:0.10.6-a_v1.2" 에서 요구에 맞게 변경하시길 바랍니다(a 또는m, v1.0~v1.3).
-- 참고로 a 모델에는 1.3 버전은 없습니다.
-```bash
-# a 모델의 1.2 버전을 사용할 경우
-sudo docker run --rm -e DISPLAY=${DISPLAY} -v /tmp/.X11-unix:/tmp/.X11-unix -p 50051:50051 rainbowroboticsofficial/rby1-sim:0.10.6-a_v1.2
+### 1-6. Run Simulator (optional)
 
+If you do not have a physical robot, run the Docker simulator.  
+The robot IP in this case is `"127.0.0.1:50051"` or `"localhost:50051"`.  
+Change the tag at the end to select a model/version (e.g. `a_v1.2`, `m_v1.3`).
+
+```bash
+# Example: Model A, firmware v1.2
+sudo docker run --rm \
+  -e DISPLAY=${DISPLAY} \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -p 50051:50051 \
+  rainbowroboticsofficial/rby1-sim:0.10.6-a_v1.2
 ```
 
-### Run driver
-- 예제들을 실행하기 전 로봇과 소통할 드라이버를 활성화해야합니다.
-- 이는 launch 파일로 실행되며, yaml파일을 읽어와 기본 설정을 진행하고 드라이버를 실행시킵니다.
-- `driver_parameters.yaml` 에서 사용자고자 하는 robot_ip 와 model 을 올바르게 작성하였는지 확인하시길 바랍니다.
-```python
-# cd your ws
+> Model `a` only supports firmware up to v1.2. Model `m` supports v1.0–v1.3.
+
+---
+
+### 1-7. Launch the Driver
+
+```bash
+# In your workspace root
 source install/setup.bash
 ros2 launch rby1_driver rby1_ros2_driver.launch.py
 ```
-- 드라이버는 아래 사진과 같이 실행됩니다.
+### 1-8. Run Examples
 
-![드라이버 구조](Doc/img/driver.png)
-
-- 사용자는 드라이버에 서비스 통신을 통해 각 파트(right_arm, left_arm, torso)에 제어기를 설정할 수 있습니다.
-- 제어기 변경 및 설정 시 로봇이 구동중이라면 행동을 중지(cancel_control)하고 제어기를 변경하게 됩니다.
-- 만약 제어기를 변경하지 않을 경우, 제어기는 기본적으로 joint position제어를 하게됩니다.
-
-### Examples
-- `rby1_examples` 패키지에는 다양한 시나리오의 예제 코드가 포함되어 있습니다.
-- 구동방식
+Each example can be run in a **separate terminal** while the driver is active:
 ```bash
-# 별도의 터미널을 생성
-# cd your ws
 source install/setup.bash
-ros2 run rby1_examples single_joint.py # 예시
+ros2 run rby1_examples <example_name>
 ```
-| example | explain |
-|---|---|
-| cancel_control | 액션 cancel 명령으로 로봇제어 중지 + control_cancel 서비스 통신명령전송 |
-| cartesian_control | 카타시안 제어기 |
-| cartesian_impedance | 카타시안 임피던스 제어기 |
-| joint_group| torso의 joint group 제어기 명령 |
-| joint_impedance | 조인트 임피던스 명령 |
-| multi_control | 각 파트마다 다른 제어기를 활용하여 제어 |
-| multi_joint | arms,torso,head 모두를 포함한 명령전송 |
-| power_control | power,servo on/off |
-| robot_status_monitor | robot_info에서 확인 가능한 파라미터들을 모니터링 |
-| single_joint | 단일 파트에 대한 조인트명령 |
-| stream_joint_control | 스트림 형식의 제어명령. 명령보내면 joint trajectory를 기반으로 스트림 명령후 스트림 닫음 |
-| tool_flange_test | 툴플렌지에서 확인되는 f/t센서 데이터 및 정보 모니터링 |
-| zero_pose | 로봇 zero_pose로 명령 |
----
 
-## 2.패키지 구성 및 역할
-| 패키지 | 역할 |
-|---|---|
-| `rby1_driver` | C++ 기반의 메인 드라이버 노드. RBY1 SDK를 통해 실제 로봇과 통신하며 ROS 2 인터페이스를 제공합니다. |
-| `rby1_msgs` | 로봇 제어 및 상태 확인에 필요한 커스텀 메시지, 서비스, 액션 정의를 포함합니다. |
-| `rby1_examples` | 드라이버 기능을 활용하는 파이썬 기반의 다양한 제어 예제 코드를 제공합니다. |
----
-
-### 2-1. rby1_driver
-- 통신액션,서비스 선언
-- 로봇 전원, 서보키는 서비스통신 진행 : 이미 켜져있으면 드라이버 내부에서 알아서 처리함. 안켜진거 있으면 그것만 on/off
-- 사용할 제어기 설정 후 서비스통신을 통해 전송 : 기본값으로는 joint position제어로 되어있음
-    - 제어기 설정시, 필요한 파라미터는 기입해줘야 함. 값이 누락되면 기본값으로 사용되도록 설정되어있음
-    - [제어기종류 및 필요변수 매뉴얼에 추가할 예정]
-- 하나의 파트(left_arm, right_arm, torso, head)만 액션으로 보내거나, 모든 데이터를 한번에 보내기 가능
-   - 조인트 : 각도 rad 값
-   - 카타시안 : 4*4행렬의 요소를 16크기의 배열로 나열한 행렬
-- 제어기 사용 시 일반적으로 left_arm,right_arm,torso,head 로 나눠서 명명
-- 따라서 각 조인트의 일부만을 제어하는 것은 불가능(torso 제외)
-
-|제어기|사용방식|
-|---|---|
-|Joint position, Joint impedance|각 조인트의 rad 값|
-|Cartesian position, Cartesian impedance|타겟 링크의 4*4행렬값(이를 16크기의 배열로 변환하여 전송)|
-|Joint group|torso 의 선택된 joint 이름과 rad 값|
-|Gravity compensation|파트의 on/off|
-|stream|ros2의 trajectory 변수를 활용한 조인트 position의 경로값|
----
-### 1. 로봇 제어 (Advanced Control)
-- **Joint Control**: 각 부위별(Torso, Arm, Head) 또는 전신(Multi-joint)의 관절 위치를 개별적으로 제어할 수 있습니다.
-- **Cartesian Control**: 4x4 변환 행렬을 16크기의 배열로 통신하며, 사용자가 정한 타켓 링크의 위치와 방향을 제어합니다.
-- **Impedance Control**: 관절 및 카테시안 공간에서의 임피던스 제어를 지원합니다.
-- **Gravity Compensation**: 중력 보상 모드를 통해 사용자가 로봇을 직접 손으로 움직여 가르칠 수 있는 티칭(Direct Teaching) 기능을 제공합니다.
-- **Trajectory Streaming**: ros2에서 자주 사용되는 관절 궤적 데이터를 받아서 rb-y1의 스트림 형식으로 제어합니다.
-
-### 2. 통합 상태 모니터링 (Comprehensive Monitoring)
-- **States**: 100Hz 주기(사용자가 수정 가능)로 로봇이 제공하는 상태를 발행합니다.
-- **Sensor Integration**: 6축 FT 센서 데이터, 툴 플랜지 IMU 데이터, 배터리 및 전원 상태를 실시간으로 확인할 수 있습니다.
-- **Link Poses**: 내부 Dynamics 엔진을 활용하여 주요 링크의 카테시안 좌표를 실시간으로 계산하여 발행합니다.
-- **Joint State**: 로봇의 각 관절들의 각도값을 받고, 옵션을 통해 전체 데이터가 통합된 하나의 토픽을 받을 수 있습니다.
-
-### 3. 유연한 장치 관리 (Device Management)
-- **Power & Servo Control**: 개별 부위 또는 전체 로봇의 전원 및 서보 상태를 서비스를 통해 제어합니다.
-- **Tool Flange I/O**: 툴 플랜지의 출력 전압(12V/24V) 설정 및 디지털 입출력 상태 확인 기능을 제공합니다.
-- **Fault Management**: 하드웨어 또는 제어 폴트 발생 시 소프트웨어적인 리셋 및 복구 기능을 지원합니다.
-
-
-
-## 시스템 아키텍쳐
-본 드라이버는 RBY1 SDK를 ROS 2 노드로 래핑(Wrapping)하는 구조로 설계되었습니다.
-
-1.  **Driver Node**: SDK를 통해 실시간 로봇 상태(Joint State, Cartesian Pose, Sensor Data)를 읽어와 ROS Topic으로 발행합니다.
-2.  **Command Builder**: SDK의 `CommandBuilder`를 활용하여 ROS Action 요청을 SDK 명령어로 변환하고 주입합니다.
-3.  **State Machine**: 서비스(`set_control_mode`)를 통해 각 부위별 제어 방식(Position, Impedance 등)을 실시간으로 전환하며 동적인 제어를 수행합니다.
+| Example | Command | Description |
+|---------|---------|-------------|
+| `zero_pose` | `ros2 run rby1_examples zero_pose` | Moves all joints to 0 rad simultaneously |
+| `joint_command` | `ros2 run rby1_examples joint_command` | Sends Ready Pose → Zero Pose via joint position action |
+| `cartesian_command` | `ros2 run rby1_examples cartesian_command` | Moves the right arm to a target Cartesian pose |
+| `multi_controls` | `ros2 run rby1_examples multi_controls` | Simultaneous joint + Cartesian control per body part |
+| `cancel_control` | `ros2 run rby1_examples cancel_control` | Demonstrates action cancel and Trigger service cancel |
+| `gravity_compensation` | `ros2 run rby1_examples gravity_compensation` | Enables gravity compensation (direct teaching) mode |
+| `stream_joint_control` | `ros2 run rby1_examples stream_joint_control` | Streams a pre-computed JointTrajectory to the robot |
+| `power_control` | `ros2 run rby1_examples power_control` | Full power lifecycle: Power ON/OFF, Servo ON/OFF |
+| `brake_control` | `ros2 run rby1_examples brake_control` | Releases and re-engages arm brakes via IDLE state |
+| `joint_state_monitoring` | `ros2 run rby1_examples joint_state_monitoring` | Prints per-component joint positions in real time |
+| `robot_status_monitor` | `ros2 run rby1_examples robot_status_monitor` | Comprehensive state monitor (CM state, brakes, battery, FT) |
+| `tool_flange_monitoring` | `ros2 run rby1_examples tool_flange_monitoring` | Continuously prints tool flange FT/IMU/IO data |
+| `tool_flange_test` | `ros2 run rby1_examples tool_flange_test` | Power-cycles the tool flange and reads sensor state |
 
 ---
 
-## 시스템 구성 및 주요 기능
+## 2. Package Structure
 
--   **모듈형 상태 발행**: 각 부위(Torso, Right Arm, Left Arm, Head, Mobility)의 상태를 개별 토픽 또는 통합 토픽(`AllMotorState`)으로 선택적 발행 가능.
--   **다양한 제어 모드 지원**:
-    -   Joint Position / Joint Impedance
-    -   Cartesian Position / Cartesian Impedance
-    -   Gravity Compensation (중력 보상)
-    -   Joint Group Position (특정 관절 그룹 제어)
--   **고급 상태 모니터링**: 전원 상태, FT 센서 데이터, 툴 플랜지 IMU 및 스위치 입력 등을 실시간으로 Publish.
--   **안전 기능**: 자가 충돌 감지(Collision Detection) 시 자동 제어 취소 기능 지원.
+| Package | Role |
+|---------|------|
+| `rby1_driver` | C++ main driver node. Wraps the RBY1 SDK and exposes a ROS 2 interface. |
+| `rby1_msgs` | Custom message, service, and action definitions for robot control and state. |
+| `rby1_examples` | Python example scripts demonstrating all major driver features. |
+|`rby1_description` | Robot description for ROS, demonstrating URDF and Mesh files, and simple visualization launch file. |
 
 ---
 
-## 통신 인터페이스 (Communication Interfaces)
+## 3. System Architecture
 
-## 5.토픽 (Topics - Publishers)
+```
+[User Node / Example]
+        │
+   ROS 2 Topics / Services / Actions
+        │
+  ┌─────▼────────────────────┐
+  │   rby1_ros2_driver (C++) │
+  │  ┌────────────────────┐  │
+  │  │   State Publisher  │  │  ← reads robot state via SDK, publishes ROS topics
+  │  ├────────────────────┤  │
+  │  │  Service Handlers  │  │  ← power, servo, brake, gravity comp, CM commands
+  │  ├────────────────────┤  │
+  │  │  Action Servers    │  │  ← joint commands, Cartesian commands, streaming
+  │  └────────────────────┘  │
+  └─────────────────┬────────┘
+                    │ gRPC
+             ┌──────▼──────┐
+             │  RBY1 Robot │
+             │  (or Sim)   │
+             └─────────────┘
+```
 
-| 토픽 이름 | 자료형 (Message Type) | 설명 |
-|---|---|---|
-| `joint_states/torso` | `sensor_msgs/msg/JointState` | Torso 관절의 상태 (위치, 속도, 토크) |
-| `joint_states/right_arm` | `sensor_msgs/msg/JointState` | 우측 팔 관절의 상태 |
-| `joint_states/left_arm` | `sensor_msgs/msg/JointState` | 좌측 팔 관절의 상태 |
-| `joint_states/head` | `sensor_msgs/msg/JointState` | 머리 관절의 상태 |
-| `joint_states/torso_cartesian` | `rby1_msgs/msg/CartesianPose` | Torso 말단 장치의 카테시안 좌표 (4x4 Matrix) |
-| `joint_states/right_cartesian` | `rby1_msgs/msg/CartesianPose` | 우측 팔 말단 장치의 카테시안 좌표 |
-| `joint_states/left_cartesian` | `rby1_msgs/msg/CartesianPose` | 좌측 팔 말단 장치의 카테시안 좌표 |
-| `joint_states/control_state` | `std_msgs/msg/Int32` | 로봇의 현재 제어 상태 (0:NONE, 1:ENABLE, 2:EXECUTING, 4:MINOR_FAULT, 5:MAJOR_FAULT, 6:IDLE) |
-| `joint_states/power_state` | `rby1_msgs/msg/PowerState` | 배터리 전압, 전류, EMO 상태 등 전원 관련 정보 |
-| `joint_states/tool_flange_state`| `rby1_msgs/msg/ToolFlangeState` | FT 센서 데이터, 툴 IMU, 스위치 및 IO 상태 |
-| `joint_states/torque_velocity` | `rby1_msgs/msg/TorqueVelocityState` | 전체 관절의 속도 및 토크, COM 정보 |
-
-### 서비스 (Services)
-
-| 서비스 이름 | 자료형 (Service Type) | 설명 |
-|---|---|---|
-| `/robot_power` | `rby1_msgs/srv/StateOnOff` | 로봇 전원 On/Off (파라미터로 특정 부위 지정 가능) |
-| `/robot_servo` | `rby1_msgs/srv/StateOnOff` | 관절 서보 On/Off |
-| `/tool_flange_power` | `rby1_msgs/srv/StateOnOff` | 툴 플랜지 출력 전압 설정 (12V, 24V, 0V) |
-| `/set_control_mode` | `rby1_msgs/srv/ControlMode` | 각 부위별 제어 모드 및 파라미터(Stiffness 등) 설정 |
-| `/cancel_control` | `std_srvs/srv/Trigger` | 현재 수행 중인 모든 제어 명령 취소 및 정지 |
-
-### 액션 서버 (Action Servers)
-
-| 액션 이름 | 자료형 (Action Type) | 설명 |
-|---|---|---|
-| `joint_states/single_position_command` | `rby1_msgs/action/SingleJointCommand` | 특정 한 부위에 대한 위치/카테시안 명령 전달 |
-| `joint_states/multi_position_command` | `rby1_msgs/action/MultiJointCommand` | 여러 부위(전신)에 대한 동기화된 명령 전달 |
-| `joint_states/stream_position_command`| `rby1_msgs/action/StreamPosition` | 관절 궤적(Joint Trajectory) 스트리밍 제어 |
+**Key internal components:**
+- **State Loop**: Calls `GetState()` and `GetControlManagerState()` at `get_state_period` intervals and publishes all state topics.
+- **Action Executors**: Each action goal is translated into an SDK `CommandBuilder` command and executed synchronously. Minor faults during execution trigger automatic reset and recovery.
+- **Safety Guard**: All motion commands are rejected unless the Control Manager is in `ENABLE` or `EXECUTING` state.
+- **Collision Detection**: When `collision_enable: true`, self-collision is monitored and `CancelControl()` is called automatically if distance falls below `collision_threshold`.
 
 ---
 
+## 4. Control Manager States
+
+The `RobotState.control_manager_state` field (and the `joint_states/robot_state` topic) uses the following integer constants, also accessible as `RobotState.STATE_*`:
+
+| Value | Constant | Description |
+|-------|----------|-------------|
+| `0` | `STATE_NONE` | Driver not initialized or disconnected |
+| `1` | `STATE_IDLE` | Control Manager is disabled (IDLE). Safe for brake operations. |
+| `2` | `STATE_ENABLE` | Control Manager is active and holding position |
+| `3` | `STATE_EXECUTING` | A motion command is currently being executed |
+| `4` | `STATE_MAJOR_FAULT` | Unrecoverable hardware fault — requires reset |
+| `5` | `STATE_MINOR_FAULT` | Recoverable fault — driver auto-resets by default |
+
+---
+
+## 5. Communication Interfaces
+
+### 5-1. Topics (Publishers)
+
+| Topic | Type | Always Active | Description |
+|-------|------|:---:|-------------|
+| `joint_states/torso` | `sensor_msgs/JointState` | ✅ | Torso joint positions, velocities, torques |
+| `joint_states/right_arm` | `sensor_msgs/JointState` | ✅ | Right arm joint state |
+| `joint_states/left_arm` | `sensor_msgs/JointState` | ✅ | Left arm joint state |
+| `joint_states/head` | `sensor_msgs/JointState` | ✅ | Head joint state |
+| `joint_states/robot_state` | `rby1_msgs/RobotState` | ✅ | Control Manager state, brakes, EMO, CoM, tool flange connection |
+| `joint_states/battery_state` | `sensor_msgs/BatteryState` | ⚙️ `publish_battery_state` | Battery voltage, current, percentage |
+| `joint_states/tool_flange/left` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Left flange: FT sensor, IMU, switch, voltage, digital I/O |
+| `joint_states/tool_flange/right` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Right flange: FT sensor, IMU, switch, voltage, digital I/O |
+
+> ⚙️ = controlled by the corresponding flag in `driver_parameters.yaml`
+
+---
+
+### 5-2. Services
+
+| Service | Type | Description |
+|---------|------|-------------|
+| `robot_power` | `rby1_msgs/StateOnOff` | Power ON/OFF. `parameters`: `"all"`, `"48v"`, `"5v"`, etc. |
+| `robot_servo` | `rby1_msgs/StateOnOff` | Servo ON/OFF. `parameters`: `"all"`, joint/part names |
+| `tool_flange_power` | `rby1_msgs/StateOnOff` | Set tool flange voltage. `parameters`: `"12v"`, `"24v"`, `"48v"` (ON) or `""` (OFF) |
+| `gravity_compensation` | `rby1_msgs/GravityCompensation` | Enable/disable gravity compensation per body part |
+| `cancel_control` | `std_srvs/Trigger` | Cancel all active motion commands immediately |
+| `get_cartesian_pose` | `rby1_msgs/GetCartesianPose` | Query Cartesian transform between two links |
+| `control_manager_command` | `rby1_msgs/ControlManagerCommand` | Send `CMD_ENABLE` / `CMD_DISABLE` / `CMD_RESET` to the Control Manager |
+| `set_motor_brake` | `rby1_msgs/StateOnOff` | Engage (`state=true`) or release (`state=false`) a joint brake. `parameters`: joint name (e.g. `"right_arm_3"`). Only available in `STATE_IDLE`. |
+
+#### `ControlManagerCommand` constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `CMD_NONE` | `0` | No operation |
+| `CMD_ENABLE` | `1` | Enable the Control Manager (start position hold) |
+| `CMD_DISABLE` | `2` | Disable the Control Manager (transition to IDLE) |
+| `CMD_RESET` | `3` | Reset MAJOR/MINOR fault and return to IDLE |
+
+---
+
+### 5-3. Action Servers
+
+| Action Server | Type | Description |
+|---------------|------|-------------|
+| `robot_joint` | `rby1_msgs/Rby1JointCommand` | Whole-body joint position command. Each body part (torso, right_arm, left_arm, head) can be commanded independently in a single goal. |
+| `robot_cartesian` | `rby1_msgs/Rby1CartesianCommand` | Whole-body Cartesian command. Each arm and torso can be assigned an SE3 target pose (4×4 matrix → 16-element `float64[]` array). |
+| `joint_states/stream_position_command` | `rby1_msgs/StreamPosition` | Streams a full `JointTrajectory` (multi-waypoint) to the robot. |
+
+> The action server names (`robot_joint`, `robot_cartesian`) are configured via `joint_position_topic_name` and `cartesian_position_topic_name` in `driver_parameters.yaml`.
+
+---
+
+## 6. Custom Message Types
+
+### `rby1_msgs/JointCommand` (used inside `Rby1JointCommand` goals)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `joint_names` | `string[]` | — | Optional joint name list |
+| `position` | `float64[]` | — | Target joint positions (rad) |
+| `minimum_time` | `float64` | `2.0` | Minimum execution time (s) |
+| `velocity_limit` | `float64` | `4.7` | Joint velocity limit (rad/s) |
+| `acceleration_limit` | `float64` | `1.0` | Acceleration scaling |
+| `use_impedance` | `bool` | `false` | Use joint impedance instead of position control |
+| `stiffness` | `float64[]` | — | Impedance stiffness coefficients |
+| `damping_ratio` | `float64` | `1.0` | Impedance damping ratio |
+| `torque_limit` | `float64` | `10.0` | Impedance torque safety limit (N·m) |
+
+### `rby1_msgs/CartesianCommand` (used inside `Rby1CartesianCommand` goals)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `target_link` | `string` | Name of the end-effector link to control |
+| `ref_link` | `string` | Reference coordinate frame link |
+| `transform` | `float64[16]` | Row-major 4×4 homogeneous transform matrix |
+| `minimum_time` | `float64` | Minimum execution time (s) |
+| `use_impedance` | `bool` | Use Cartesian impedance instead of position control |
+
+### `rby1_msgs/RobotState`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `control_manager_state` | `int32` | Current Control Manager state (see constants above) |
+| `brake_state` | `BrakeState` | Brake engagement per joint (left_arm[], right_arm[], torso[], head[]) |
+| `tool_flange_state` | `bool[]` | Tool flange connection status `[left, right]` |
+| `emo_state` | `bool` | Emergency Stop pressed status |
+| `center_of_mass` | `float64[3]` | Calculated CoM position `[x, y, z]` in meters |
+
+### `rby1_msgs/ToolFlangeState`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ft_force` | `float64[3]` | Force `[Fx, Fy, Fz]` in Newtons |
+| `ft_torque` | `float64[3]` | Torque `[Tx, Ty, Tz]` in N·m |
+| `gyro` | `float64[3]` | Gyroscope `[roll, pitch, yaw]` in rad/s |
+| `acceleration` | `float64[3]` | Accelerometer `[ax, ay, az]` in m/s² |
+| `switch_a` | `bool` | Physical switch A state |
+| `output_voltage` | `int32` | Output voltage in millivolts |
+| `digital_input_a/b` | `bool` | Digital input A/B state |
+| `digital_output_a/b` | `bool` | Digital output A/B state |
+
+---
+
+## 7. Key Features
+
+### Robot Control
+- **Joint Position Control**: Command each body part (Torso, Right/Left Arm, Head) to target joint angles (rad) via the `robot_joint` action. All parts can be commanded simultaneously in one goal.
+- **Cartesian Position Control**: Command end-effector pose as a 4×4 SE3 transform via the `robot_cartesian` action.
+- **Impedance Control**: Both joint and Cartesian modes support impedance control with configurable stiffness and damping.
+- **Gravity Compensation**: Enables back-drivable joints for direct teaching; the driver continuously compensates gravity.
+- **Trajectory Streaming**: Send a pre-computed `JointTrajectory` (multi-waypoint) via the `stream_position_command` action.
+
+### State Monitoring
+- Joint states (position, velocity, torque) are published at up to 100 Hz per body part.
+- A unified `robot_state` topic provides Control Manager state, brake status, EMO, and CoM in one message.
+- Optional battery state and per-flange FT/IMU data can be enabled in `driver_parameters.yaml`.
+
+### Safety & Fault Management
+- Motion commands are rejected if the Control Manager is not in `ENABLE` or `EXECUTING` state.
+- Minor faults encountered during execution are automatically reset and control is resumed.
+- Self-collision detection (optional): automatically calls `CancelControl()` when link distance falls below `collision_threshold`.
+- Brake operations are only allowed in `STATE_IDLE` to prevent mechanical damage.
+
+---
+
+## 8. Notes & Known Limitations
+
+- **Simulator**: Battery voltage, FT sensor, and IMU data read as `0.0` in simulation (no physical hardware).
+- **Tool flange topics** require `publish_tool_flange_state: true` in `driver_parameters.yaml`.
+- **Brake control** requires the Control Manager to be in `STATE_IDLE`. The `brake_control` example handles this transition automatically.
+- The `stream_joint_control` example currently uses `StreamPosition` only (the legacy `MultiJointCommand` action has been removed).

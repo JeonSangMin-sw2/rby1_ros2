@@ -1,0 +1,10 @@
+# Service Request definition
+# Reference coordinate frame link name
+string ref_link
+
+# Target coordinate frame link name
+string target_link
+---
+# Service Response definition
+# Resulting Cartesian transform between ref_link and target_link
+geometry_msgs/Transform transform

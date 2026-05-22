@@ -8,7 +8,7 @@
     power_on: ["all"] # example: ["5"], ["12,24,48"] , ["all"]
 
     # servo on
-    servo_on: ["all"] # example: ["torso"], ["right_arm, left_arm"] ,["right_arm_1, left_arm_1"], ["all"]
+    servo_on: ["all"] # example: ["torso"], ["right_arm, left_arm"] ,["right_arm_1, left_arm_3"], ["all"]
 
     # drive parameters
     get_state_period: 0.01 # seconds
@@ -21,19 +21,19 @@
 
     # topic name
     state_topic_name: "joint_states"
+    joint_position_topic_name: "robot_joint"
+    cartesian_position_topic_name: "robot_cartesian"
 
 
     # additional options
     fault_reset_trigger: true # 초기화 단계에서 major, minor fault가 뜨면 자동으로 리셋해서 다시 연결하게 할건지
-    node_power_off_trigger: false # 노드 종료시 전원 끌 것인지
-    use_all_motor_state_topic_trigger: false # 하나의 토픽으로 모든 관절의 상태를 publish 할 것인지
+    node_power_off_trigger: false # 노드 종료시 알아서 cancel -> zero pose -> disable -> power off 순으로 전원 끌 것인지
     
     # Collision options
     collision_enable: false
     collision_threshold: 0.01 # meters
 
     # Status publish triggers
-    publish_power_state: true
-    publish_tool_flange: true
-    publish_torque_velocity: true
+    publish_battery_state: true
+    publish_tool_flange_state: true
     

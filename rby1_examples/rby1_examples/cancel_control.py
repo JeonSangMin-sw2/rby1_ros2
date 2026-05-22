@@ -1,27 +1,56 @@
 #!/usr/bin/env python3
+"""
+Cancel Control Example
+======================
+Demonstrates two independent cancellation mechanisms in the RBY1 driver:
+
+  Part 0: Move to Zero Pose (preparation, ensures a safe starting posture).
+  Part 1: Action Cancellation  – Send a long-running right-arm goal, then
+          cancel it mid-flight via the action client cancel call.
+  Part 2: Service Cancellation – Send a left-arm goal, then cancel it by
+          calling the 'cancel_control' Trigger service on the driver.
+
+Sequence:
+  0. Ensure robot is powered on and servos are active.
+  1. Move whole body to zero pose.
+  2. Send right-arm goal, wait 1 s, cancel via action protocol.
+  3. Send left-arm goal, wait 1 s, cancel via Trigger service.
+
+Run:
+  ros2 run rby1_examples cancel_control
+
+Actions used:
+  - robot_joint        (Rby1JointCommand)
+
+Services used:
+  - robot_power        (StateOnOff)
+  - robot_servo        (StateOnOff)
+  - cancel_control     (std_srvs/Trigger)
+
+Topics subscribed:
+  - joint_states/robot_state  (RobotState)
+"""
 import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from rby1_msgs.action import SingleJointCommand, MultiJointCommand
-from rby1_msgs.srv import StateOnOff, ControlMode
+from rby1_msgs.action import Rby1JointCommand
+from rby1_msgs.msg import JointCommand, RobotState
+from rby1_msgs.srv import StateOnOff
 from std_srvs.srv import Trigger
-from std_msgs.msg import Int32
 
 class CancelControlExample(Node):
     def __init__(self):
         super().__init__('cancel_control_example')
-        self._single_action_client = ActionClient(self, SingleJointCommand, 'joint_states/single_position_command')
-        self._multi_action_client = ActionClient(self, MultiJointCommand, 'joint_states/multi_position_command')
+        self._action_client = ActionClient(self, Rby1JointCommand, 'robot_joint')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
-        self.control_mode_client = self.create_client(ControlMode, 'set_control_mode')
         self.cancel_control_client = self.create_client(Trigger, 'cancel_control')
-        self.state_sub = self.create_subscription(Int32, 'joint_states/control_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):
-        self.control_state = msg.data
+        self.control_state = msg.control_manager_state
 
     def wait_for_state(self):
         while self.control_state is None and rclpy.ok():
@@ -44,38 +73,60 @@ class CancelControlExample(Node):
         rclpy.spin_until_future_complete(self, future)
         return future.result()
 
-    def send_control_mode_request(self, part_name, control_type):
-        req = ControlMode.Request()
-        req.part_name = part_name
-        req.control_type = control_type
-        future = self.control_mode_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        return future.result()
-
     def send_cancel_service_request(self):
         req = Trigger.Request()
         future = self.cancel_control_client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
         return future.result()
 
-    def send_single_goal(self, target_name, position, minimum_time):
-        goal_msg = SingleJointCommand.Goal()
-        goal_msg.target_name = target_name
-        goal_msg.position = position
-        goal_msg.minimum_time = minimum_time
+    def send_right_arm_goal(self, position, minimum_time):
+        goal_msg = Rby1JointCommand.Goal()
+        cmd_right = JointCommand()
+        cmd_right.position = position
+        cmd_right.minimum_time = minimum_time
+        goal_msg.right_arm = cmd_right
 
-        self._single_action_client.wait_for_server()
-        self.get_logger().info(f'Sending Single Goal to {target_name}...')
-        return self._single_action_client.send_goal_async(goal_msg)
+        self._action_client.wait_for_server()
+        self.get_logger().info('Sending Right Arm Joint Goal...')
+        return self._action_client.send_goal_async(goal_msg)
 
-    def send_multi_goal(self, left_arm_pos, minimum_time):
-        goal_msg = MultiJointCommand.Goal()
-        goal_msg.left_arm = left_arm_pos
-        goal_msg.minimum_time = minimum_time
+    def send_left_arm_goal(self, position, minimum_time):
+        goal_msg = Rby1JointCommand.Goal()
+        cmd_left = JointCommand()
+        cmd_left.position = position
+        cmd_left.minimum_time = minimum_time
+        goal_msg.left_arm = cmd_left
 
-        self._multi_action_client.wait_for_server()
-        self.get_logger().info('Sending Multi Goal (Left Arm)...')
-        return self._multi_action_client.send_goal_async(goal_msg)
+        self._action_client.wait_for_server()
+        self.get_logger().info('Sending Left Arm Joint Goal...')
+        return self._action_client.send_goal_async(goal_msg)
+
+    def send_zero_goal(self):
+        goal_msg = Rby1JointCommand.Goal()
+        
+        cmd_torso = JointCommand()
+        cmd_torso.position = [0.0] * 6
+        cmd_torso.minimum_time = 4.0
+        goal_msg.torso = cmd_torso
+
+        cmd_right = JointCommand()
+        cmd_right.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        cmd_right.minimum_time = 4.0
+        goal_msg.right_arm = cmd_right
+
+        cmd_left = JointCommand()
+        cmd_left.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        cmd_left.minimum_time = 4.0
+        goal_msg.left_arm = cmd_left
+
+        cmd_head = JointCommand()
+        cmd_head.position = [0.0] * 2
+        cmd_head.minimum_time = 4.0
+        goal_msg.head = cmd_head
+
+        self._action_client.wait_for_server()
+        self.get_logger().info('Sending Zero Pose Goal...')
+        return self._action_client.send_goal_async(goal_msg)
 
 def main(args=None):
     rclpy.init(args=args)
@@ -89,15 +140,28 @@ def main(args=None):
         while example.wait_for_state() not in [2, 3] and rclpy.ok():
             rclpy.spin_once(example, timeout_sec=0.1)
 
-    # 1. Action Cancellation (Right Arm)
-    target = "right_arm"
-    example.get_logger().info('--- Part 1: Action Cancellation ---')
-    example.send_control_mode_request(target, ControlMode.Request.JOINT_POSITION)
+    # 0. Send zero pose goal
+    example.get_logger().info('--- Part 0: Send Zero Pose Goal ---')
+    future = example.send_zero_goal()
+    rclpy.spin_until_future_complete(example, future)
+    goal_handle = future.result()
+
+    if not goal_handle.accepted:
+        example.get_logger().error('Zero pose failed to accept')
+        return
+    get_result_future = goal_handle.get_result_async()
+    rclpy.spin_until_future_complete(example, get_result_future)
+    result = get_result_future.result().result
+    if not result.success:
+        example.get_logger().error(f'Zero pose failed with code: {result.finish_code}')
+        return
     
+    # 1. Action Cancellation (Right Arm)
+    example.get_logger().info('--- Part 1: Action Cancellation ---')
     position = [0.0, -1.0, 0.0, -1.57, 0.0, 0.0, 0.0]
     min_time = 10.0
     
-    future = example.send_single_goal(target, position, min_time)
+    future = example.send_right_arm_goal(position, min_time)
     rclpy.spin_until_future_complete(example, future)
     goal_handle = future.result()
 
@@ -116,15 +180,11 @@ def main(args=None):
     time.sleep(1.0)
 
     # 2. Service Cancellation (Left Arm)
-    target = "left_arm"
     example.get_logger().info('--- Part 2: Service Cancellation (Global Stop) ---')
-    example.send_control_mode_request(target, ControlMode.Request.JOINT_POSITION)
-    
-    # Symmetric pose for left arm (outward movement)
     left_position = [0.0, 1.0, 0.0, -1.57, 0.0, 0.0, 0.0] 
     min_time = 5.0
     
-    future = example.send_multi_goal(left_position, min_time)
+    future = example.send_left_arm_goal(left_position, min_time)
     rclpy.spin_until_future_complete(example, future)
     goal_handle = future.result()
 

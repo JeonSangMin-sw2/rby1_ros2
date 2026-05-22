@@ -1,0 +1,16 @@
+# Service Request
+# Command enum types
+int8 CMD_NONE = 0
+int8 CMD_ENABLE = 1
+int8 CMD_DISABLE = 2
+int8 CMD_RESET = 3
+
+# The requested command to execute
+int8 command
+---
+# Service Response
+# True if the command executed successfully, False otherwise
+bool success
+
+# Descriptive log or error details
+string message

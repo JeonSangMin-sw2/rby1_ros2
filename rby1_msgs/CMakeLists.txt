@@ -18,15 +18,17 @@ find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/StateOnOff.srv"
-  "srv/ControlMode.srv"
-  "action/MultiJointCommand.action"
-  "action/SingleJointCommand.action"
+  "srv/GetCartesianPose.srv"
+  "srv/GravityCompensation.srv"
+  "srv/ControlManagerCommand.srv"
+  "action/Rby1JointCommand.action"
+  "action/Rby1CartesianCommand.action"
   "action/StreamPosition.action"
-  "msg/AllMotorState.msg"
-  "msg/PowerState.msg"
+  "msg/BrakeState.msg"
+  "msg/RobotState.msg"
   "msg/ToolFlangeState.msg"
-  "msg/TorqueVelocityState.msg"
-  "msg/CartesianPose.msg"
+  "msg/JointCommand.msg"
+  "msg/CartesianCommand.msg"
   DEPENDENCIES action_msgs trajectory_msgs geometry_msgs
 )
 
