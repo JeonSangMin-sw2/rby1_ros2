@@ -144,6 +144,8 @@ ros2 run rby1_examples <example_name>
 
 ## 3. System Architecture
 
+![driver](Doc/img/driver.png)
+
 ```
 [User Node / Example]
         │
