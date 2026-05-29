@@ -74,6 +74,9 @@ Because the workspace was built with `--symlink-install`, **no rebuild is needed
 | `angular_velocity_limit` | `4.712` | Joint angular velocity limit (rad/s) |
 | `linear_velocity_limit` | `1.5` | Cartesian linear velocity limit (m/s) |
 | `acceleration_limit` | `1.0` | Acceleration scaling factor |
+| `se2_minimum_time` | `1.0` | Minimum execution time (interpolation ramp) for SE2 velocity commands (seconds) |
+| `se2_linear_acceleration_limit` | `0.5` | Linear acceleration limit for SE2 velocity commands |
+| `se2_angular_acceleration_limit` | `0.5` | Angular acceleration limit for SE2 velocity commands |
 | `fault_reset_trigger` | `true` | Auto-reset MAJOR/MINOR fault on driver startup |
 | `node_power_off_trigger` | `false` | Power off robot automatically when driver node exits |
 | `collision_enable` | `false` | Enable self-collision detection |
