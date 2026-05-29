@@ -71,7 +71,7 @@ namespace rby1_ros2{
             double collision_threshold_{0.03};
             bool publish_battery_state_{false};
             bool publish_tool_flange_state_{false};
-            bool is_control_canceled_{false};
+            std::atomic<bool> is_control_canceled_{false};
 
             bool gravity_compensation_torso_{false};
             bool gravity_compensation_right_arm_{false};
@@ -99,11 +99,6 @@ namespace rby1_ros2{
             rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
             bool stream_active_{false};
             bool collision_enable_{false};
-
-            std::atomic<bool> active_torso_{false};
-            std::atomic<bool> active_left_arm_{false};
-            std::atomic<bool> active_right_arm_{false};
-            std::atomic<bool> active_head_{false};
 
             // Timer for 100Hz publishing
             rclcpp::TimerBase::SharedPtr joint_state_timer_;

@@ -66,9 +66,9 @@ Because the workspace was built with `--symlink-install`, **no rebuild is needed
 |-----------|---------|-------------|
 | `robot_ip` | `"127.0.0.1:50051"` | Robot IP address and gRPC port |
 | `model` | `"m"` | Robot model — `"a"` (RBY1-A) or `"m"` (RBY1-M) |
-| `state_topic_name` | `"joint_states"` | Namespace prefix for all state topics and action servers |
-| `joint_position_topic_name` | `"robot_joint"` | Action server name for joint position commands |
-| `cartesian_position_topic_name` | `"robot_cartesian"` | Action server name for Cartesian commands |
+| `state_topic_name` | `"joint_states"` | Fixed default namespace prefix for all state topics |
+| `joint_position_topic_name` | `"robot_joint"` | Fixed default action server name for joint position commands |
+| `cartesian_position_topic_name` | `"robot_cartesian"` | Fixed default action server name for Cartesian commands |
 | `get_state_period` | `0.01` | State publish interval (seconds) — default 100 Hz |
 | `minimum_time` | `2.0` | Default minimum execution time for motion commands (seconds) |
 | `angular_velocity_limit` | `4.712` | Joint angular velocity limit (rad/s) |
@@ -130,18 +130,19 @@ ros2 run rby1_examples <example_name>
 | Example | Command | Description |
 |---------|---------|-------------|
 | `01_power_control` | `ros2 run rby1_examples 01_power_control` | Full power lifecycle: Power ON/OFF, Servo ON/OFF |
-| `02_zero_pose` | `ros2 run rby1_examples 02_zero_pose` | Moves all joints to 0 rad simultaneously |
+| `02_brake_control` | `ros2 run rby1_examples 02_brake_control` | Releases and re-engages arm brakes via IDLE state |
 | `03_robot_status_monitor` | `ros2 run rby1_examples 03_robot_status_monitor` | Comprehensive state monitor (CM state, brakes, battery, FT) |
 | `04_tool_flange_monitoring` | `ros2 run rby1_examples 04_tool_flange_monitoring` | Continuously prints tool flange FT/IMU/IO data |
 | `05_joint_state_monitoring` | `ros2 run rby1_examples 05_joint_state_monitoring` | Prints per-component joint positions in real time |
-| `06_brake_control` | `ros2 run rby1_examples 06_brake_control` | Releases and re-engages arm brakes via IDLE state |
-| `08_joint_command` | `ros2 run rby1_examples 08_joint_command` | Sends Ready Pose → Zero Pose via joint position action |
-| `09_cartesian_command` | `ros2 run rby1_examples 09_cartesian_command` | Moves the right arm to a target Cartesian pose |
-| `10_multi_controls` | `ros2 run rby1_examples 10_multi_controls` | Simultaneous joint + Cartesian control per body part |
-| `11_cancel_control` | `ros2 run rby1_examples 11_cancel_control` | Demonstrates action cancel and Trigger service cancel |
-| `12_stream_joint_control` | `ros2 run rby1_examples 12_stream_joint_control` | Streams a pre-computed trajectory via persistent command streams |
-| `13_gravity_compensation` | `ros2 run rby1_examples 13_gravity_compensation` | Enables gravity compensation (direct teaching) mode |
+| `06_gravity_compensation` | `ros2 run rby1_examples 06_gravity_compensation` | Enables gravity compensation (direct teaching) mode |
+| `08_zero_pose` | `ros2 run rby1_examples 08_zero_pose` | Moves all joints to 0 rad simultaneously |
+| `09_joint_command` | `ros2 run rby1_examples 09_joint_command` | Sends Ready Pose → Zero Pose via joint position action |
+| `10_cartesian_command` | `ros2 run rby1_examples 10_cartesian_command` | Moves the right arm to a target Cartesian pose |
+| `11_multi_controls` | `ros2 run rby1_examples 11_multi_controls` | Simultaneous joint + Cartesian control per body part |
+| `12_trajectory_joint_command` | `ros2 run rby1_examples 12_trajectory_joint_command` | Streams a pre-computed trajectory via persistent command streams |
+| `13_cancel_control` | `ros2 run rby1_examples 13_cancel_control` | Demonstrates action cancel and Trigger service cancel |
 | `14_mobile_base_control` | `ros2 run rby1_examples 14_mobile_base_control` | Drives robot wheels via relative cmd_vel Twists |
+| `15_stream_command` | `ros2 run rby1_examples 15_stream_command` | Alternates Zero/Ready poses using regular joint commands over persistent stream with varying wait intervals |
 
 ---
 
@@ -268,7 +269,7 @@ The `RobotState.control_manager_state` field (and the `robot_state` topic) uses 
 | Action Server | Type | Description |
 |---------------|------|-------------|
 | `robot_joint` | `rby1_msgs/Rby1JointCommand` | Whole-body joint position command. Each body part (torso, right_arm, left_arm, head) can be commanded independently in a single goal. |
-| `robot_cartesian` | `rby1_msgs/Rby1CartesianCommand` | Whole-body Cartesian command. Each arm and torso can be assigned an SE3 target pose (4×4 matrix → 16-element `float64[]` array). |
+| `robot_cartesian` | `rby1_msgs/Rby1CartesianCommand` | Whole-body Cartesian command. Each arm and torso can be assigned an . geometry_msgs/msg/Transform.msg (position, quaternion)|
 | `stream_position_command` | `rby1_msgs/StreamPosition` | Streams a full `JointTrajectory` (multi-waypoint) to the robot. |
 
 > [!IMPORTANT]
@@ -353,8 +354,8 @@ The `RobotState.control_manager_state` field (and the `robot_state` topic) uses 
 
 - **Simulator**: Battery voltage, FT sensor, and IMU data read as `0.0` in simulation (no physical hardware).
 - **Tool flange topics** require `publish_tool_flange_state: true` in `driver_parameters.yaml`.
-- **Brake control** requires the Control Manager to be in `STATE_IDLE`. The `brake_control` example handles this transition automatically.
-- The `stream_joint_control` example currently uses `StreamPosition` only (the legacy `MultiJointCommand` action has been removed).
+- **Brake control** requires the Control Manager to be in `STATE_IDLE`. As an extra mechanical safety measure, brake commands are strictly rejected if 48V power is active (to prevent disengaging/engaging mechanical brakes while joints are powered). The `brake_control` example handles these states automatically.
+- The `trajectory_joint_command` example currently uses `StreamPosition` only.
 
 ## 9. rby1_description
 

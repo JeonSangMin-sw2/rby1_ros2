@@ -37,9 +37,10 @@ setup(
             '09_joint_command = rby1_examples.09_joint_command:main',
             '10_cartesian_command = rby1_examples.10_cartesian_command:main',
             '11_multi_controls = rby1_examples.11_multi_controls:main',
-            '12_stream_joint_control = rby1_examples.12_stream_joint_control:main',
+            '12_trajectory_joint_command = rby1_examples.12_trajectory_joint_command:main',
             '13_cancel_control = rby1_examples.13_cancel_control:main',
             '14_mobile_base_control = rby1_examples.14_mobile_base_control:main',
+            '15_stream_command = rby1_examples.15_stream_command:main',
         ],
     },
 )

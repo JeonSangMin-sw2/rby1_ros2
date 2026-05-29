@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-Stream Joint Control Example
-============================
-A comprehensive test and demonstration of the modernized persistent stream control
-feature in the RBY1 ROS 2 driver.
+Trajectory Joint Command Example
+===============================
+Demonstrates multi-point whole-body trajectory streaming via the StreamPosition
+action client over a persistent command stream.
 
-This example:
-  1. Ensures the robot is powered and enabled.
-  2. Sets joint position control mode.
-  3. Calls the '/stream_control' service to enable a persistent stream (minimum 10-minute hold).
-  4. Sends a standard Rby1JointCommand action goal which will be executed via stream.
-  5. Interludes: returns to Zero Pose.
-  6. Sends a whole-body trajectory via the StreamPosition action client.
-  7. Disables the persistent command stream by calling '/stream_control' with state=False.
+Sequence:
+  1. Ensure the robot is powered and enabled.
+  2. Move whole body to Zero Pose.
+  3. Call the '/stream_control' service to enable a persistent command stream.
+  4. Send a whole-body trajectory using the StreamPosition action client.
+  5. Call the '/stream_control' service with state=False to disable stream.
+  6. Return to Zero Pose.
 """
 import time
 import rclpy
@@ -23,9 +22,9 @@ from rby1_msgs.msg import RobotState, JointCommand
 from rby1_msgs.srv import StateOnOff
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-class StreamJointControl(Node):
+class TrajectoryJointCommand(Node):
     def __init__(self):
-        super().__init__('stream_joint_control')
+        super().__init__('trajectory_joint_command')
         self._stream_client = ActionClient(self, StreamPosition, 'stream_position_command')
         self._zero_pose_client = ActionClient(self, Rby1JointCommand, 'robot_joint')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
@@ -90,20 +89,28 @@ class StreamJointControl(Node):
             return False
 
     def toggle_stream(self, enable: bool) -> bool:
-        req = StateOnOff.Request()
-        req.state = enable
-        req.parameters = ""
-        self.get_logger().info(f"Calling stream_control: state={enable}...")
-        self.stream_control_client.wait_for_service()
-        future = self.stream_control_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        res = future.result()
-        if res and res.success:
-            self.get_logger().info(f"Stream Control successfully {'enabled' if enable else 'disabled'}.")
-            return True
-        else:
-            self.get_logger().error(f"Failed to toggle stream control: {res.message if res else 'No response'}")
+        if not rclpy.ok():
             return False
+        try:
+            req = StateOnOff.Request()
+            req.state = enable
+            req.parameters = ""
+            self.get_logger().info(f"Calling stream_control: state={enable}...")
+            self.stream_control_client.wait_for_service(timeout_sec=1.0)
+            future = self.stream_control_client.call_async(req)
+            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+            if future.done():
+                res = future.result()
+                if res and res.success:
+                    self.get_logger().info(f"Stream Control successfully {'enabled' if enable else 'disabled'}.")
+                    return True
+                else:
+                    self.get_logger().error(f"Failed to toggle stream control: {res.message if res else 'No response'}")
+            else:
+                self.get_logger().error("Timeout toggling stream control.")
+        except Exception as e:
+            print(f"Exception during stream control toggle: {e}")
+        return False
 
     def go_to_zero_pose(self):
         self.get_logger().info('Moving Whole Body to Zero Pose...')
@@ -147,7 +154,7 @@ class StreamJointControl(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    action_client = StreamJointControl()
+    action_client = TrajectoryJointCommand()
 
     # 0. Ensure Robot is Power ON and Servo ON
     if not action_client.ensure_robot_ready():

@@ -17,6 +17,21 @@ namespace rby1_ros2{
                     robot_->SetParameter("default.linear_acceleration_limit", std::to_string(robot_parameter_.acceleration_limit));
                     // Fetch robot info once and cache it
                     info_ = robot_->GetRobotInfo();
+
+                    // Auto-reset MAJOR/MINOR faults on startup if fault_reset_trigger is true
+                    if (fault_reset_trigger) {
+                        const auto& control_manager_state = robot_->GetControlManagerState();
+                        if (control_manager_state.state == rb::ControlManagerState::State::kMajorFault ||
+                            control_manager_state.state == rb::ControlManagerState::State::kMinorFault) {
+                            RCLCPP_INFO(this->get_logger(), "Auto-resetting active fault on startup as requested by fault_reset_trigger...");
+                            if (robot_->ResetFaultControlManager()) {
+                                RCLCPP_INFO(this->get_logger(), "Fault auto-reset completed successfully.");
+                            } else {
+                                RCLCPP_WARN(this->get_logger(), "Failed to auto-reset fault on startup.");
+                            }
+                        }
+                    }
+
                     RCLCPP_INFO(this->get_logger(), "Robot Info: Model=%s, Version=%s, Compile-time DOF=%zu", 
                                 info_.robot_model_name.c_str(), info_.robot_model_version.c_str(), ModelType::kRobotDOF);
                     RCLCPP_INFO(this->get_logger(), "Joint counts: torso=%zu, right_arm=%zu, left_arm=%zu, head=%zu, mobility=%zu", 
@@ -48,7 +63,7 @@ namespace rby1_ros2{
                             dyn_joint_names_.push_back(std::string(joint_names[i]));
                         }
                         
-                        RCLCPP_INFO(this->get_logger(), "=== ROBOT JOINT PHYSICAL LIMITS ===");
+                        //RCLCPP_INFO(this->get_logger(), "=== ROBOT JOINT PHYSICAL LIMITS ===");
                         // for (size_t i = 0; i < dyn_joint_names_.size(); ++i) {
                         //     RCLCPP_INFO(this->get_logger(), "Joint [%zu] %s: Pos=[%.3f, %.3f] rad, Vel_Max=%.3f rad/s, Accel_Max=%.3f rad/s^2",
                         //                 i, dyn_joint_names_[i].c_str(), q_lower_[i], q_upper_[i], qdot_upper_[i], qddot_upper_[i]);
@@ -165,15 +180,15 @@ namespace rby1_ros2{
         this->declare_parameter<double>("acceleration_limit", 1.0);
         this->declare_parameter<double>("stop_orientation_tracking_error", 1e-5);
         this->declare_parameter<double>("stop_position_tracking_error", 1e-5);
-        this->declare_parameter<double>("se2_minimum_time", 0.05);
-        this->declare_parameter<double>("se2_linear_acceleration_limit", 2.0);
-        this->declare_parameter<double>("se2_angular_acceleration_limit", 4.0);
+        this->declare_parameter<double>("se2_minimum_time", 1.0);
+        this->declare_parameter<double>("se2_linear_acceleration_limit", 0.5);
+        this->declare_parameter<double>("se2_angular_acceleration_limit", 0.5);
         
-        this->declare_parameter<bool>("fault_reset_trigger", false);
-        this->declare_parameter<bool>("node_power_off_trigger",false);
-        this->declare_parameter<double>("collision_threshold", 0.03);
-        this->declare_parameter<bool>("publish_battery_state", false);
-        this->declare_parameter<bool>("publish_tool_flange_state", false);
+        this->declare_parameter<bool>("fault_reset_trigger", true);
+        this->declare_parameter<bool>("node_power_off_trigger", false);
+        this->declare_parameter<double>("collision_threshold", 0.01);
+        this->declare_parameter<bool>("publish_battery_state", true);
+        this->declare_parameter<bool>("publish_tool_flange_state", true);
         this->declare_parameter<bool>("collision_enable", false);
         
         this->get_parameter("robot_ip", address);
@@ -985,6 +1000,9 @@ namespace rby1_ros2{
                 rb::RobotCommandFeedback feedback;
                 {
                     std::lock_guard<std::mutex> lock(stream_mutex_);
+                    if (!stream_handler_) {
+                        throw std::runtime_error("Stream was deactivated during transmission.");
+                    }
                     feedback = stream_handler_->SendCommand(
                         rb::RobotCommandBuilder().SetCommand(comp_builder)
                     );
@@ -1015,7 +1033,15 @@ namespace rby1_ros2{
         uint32_t wait_ms = static_cast<uint32_t>((total_duration + 2.0) * 1000.0);
         RCLCPP_INFO(this->get_logger(), "Stream sent. Waiting for completion (%u ms)...", wait_ms);
         try {
-            if (!stream_handler_->WaitFor(wait_ms)) {
+            bool wait_success = false;
+            {
+                std::lock_guard<std::mutex> lock(stream_mutex_);
+                if (!stream_handler_) {
+                    throw std::runtime_error("Stream was deactivated while waiting.");
+                }
+                wait_success = stream_handler_->WaitFor(wait_ms);
+            }
+            if (!wait_success) {
                 RCLCPP_ERROR(this->get_logger(), "Timeout waiting for stream completion (%u ms).", wait_ms);
                 result->success = false;
                 result->finish_code = "kTimeout";
@@ -1121,48 +1147,6 @@ namespace rby1_ros2{
                 try { goal_handle->abort(result); } catch (...) {}
                 return;
             }
-
-            bool incoming_torso = !goal->torso.position.empty();
-            bool incoming_left_arm = !goal->left_arm.position.empty();
-            bool incoming_right_arm = !goal->right_arm.position.empty();
-            bool incoming_head = !goal->head.position.empty();
-
-            bool overlap = (incoming_torso && active_torso_) ||
-                           (incoming_left_arm && active_left_arm_) ||
-                           (incoming_right_arm && active_right_arm_) ||
-                           (incoming_head && active_head_);
-
-            if (overlap) {
-                const auto& cm_state = robot_->GetControlManagerState();
-                if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
-                    cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
-                    RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL WARNING] Overlapping components detected. Canceling active control...\033[0m");
-                    robot_->CancelControl();
-                }
-            } else {
-                RCLCPP_INFO(this->get_logger(), "No overlapping components with current motion. Executing concurrently.");
-            }
-
-            if (incoming_torso) active_torso_ = true;
-            if (incoming_left_arm) active_left_arm_ = true;
-            if (incoming_right_arm) active_right_arm_ = true;
-            if (incoming_head) active_head_ = true;
-
-            struct ActiveComponentsCleanup {
-                RBY1_ROS2_DRIVER<ModelType>* driver;
-                bool torso;
-                bool left_arm;
-                bool right_arm;
-                bool head;
-                ActiveComponentsCleanup(RBY1_ROS2_DRIVER<ModelType>* d, bool t, bool la, bool ra, bool h)
-                    : driver(d), torso(t), left_arm(la), right_arm(ra), head(h) {}
-                ~ActiveComponentsCleanup() {
-                    if (torso) driver->active_torso_ = false;
-                    if (left_arm) driver->active_left_arm_ = false;
-                    if (right_arm) driver->active_right_arm_ = false;
-                    if (head) driver->active_head_ = false;
-                }
-            } cleanup{this, incoming_torso, incoming_left_arm, incoming_right_arm, incoming_head};
 
             rb::ComponentBasedCommandBuilder component_cmd_builder;
             rb::BodyComponentBasedCommandBuilder body_comp;
@@ -1530,43 +1514,6 @@ namespace rby1_ros2{
                 return;
             }
 
-            bool incoming_torso = !goal->torso.ref_link.empty();
-            bool incoming_left_arm = !goal->left_arm.ref_link.empty();
-            bool incoming_right_arm = !goal->right_arm.ref_link.empty();
-
-            bool overlap = (incoming_torso && active_torso_) ||
-                           (incoming_left_arm && active_left_arm_) ||
-                           (incoming_right_arm && active_right_arm_);
-
-            if (overlap) {
-                const auto& cm_state = robot_->GetControlManagerState();
-                if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
-                    cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
-                    RCLCPP_WARN(this->get_logger(), "\033[1;33m[CONTROL WARNING] Overlapping components detected. Canceling active control...\033[0m");
-                    robot_->CancelControl();
-                }
-            } else {
-                RCLCPP_INFO(this->get_logger(), "No overlapping components with current motion. Executing concurrently.");
-            }
-
-            if (incoming_torso) active_torso_ = true;
-            if (incoming_left_arm) active_left_arm_ = true;
-            if (incoming_right_arm) active_right_arm_ = true;
-
-            struct ActiveComponentsCleanup {
-                RBY1_ROS2_DRIVER<ModelType>* driver;
-                bool torso;
-                bool left_arm;
-                bool right_arm;
-                ActiveComponentsCleanup(RBY1_ROS2_DRIVER<ModelType>* d, bool t, bool la, bool ra)
-                    : driver(d), torso(t), left_arm(la), right_arm(ra) {}
-                ~ActiveComponentsCleanup() {
-                    if (torso) driver->active_torso_ = false;
-                    if (left_arm) driver->active_left_arm_ = false;
-                    if (right_arm) driver->active_right_arm_ = false;
-                }
-            } cleanup{this, incoming_torso, incoming_left_arm, incoming_right_arm};
-
             rb::ComponentBasedCommandBuilder component_cmd_builder;
             rb::BodyComponentBasedCommandBuilder body_comp;
             bool use_body = false;
@@ -1895,6 +1842,14 @@ namespace rby1_ros2{
                 return;
             }
 
+            // Safety Enhancement: Absolutely reject brake operations when 48V power is active
+            if (robot_->IsPowerOn("48v")) {
+                response->success = false;
+                response->message = "Brakes cannot be engaged/released while 48V power is active!";
+                RCLCPP_WARN(this->get_logger(), "\033[1;33m[BRAKE REJECTED] Brake command rejected: 48V power is active.\033[0m");
+                return;
+            }
+
             if (request->parameters.empty()) {
                 response->success = false;
                 response->message = "Joint/Device name parameter is required!";
@@ -1975,6 +1930,7 @@ namespace rby1_ros2{
         std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (request->state) {
+            std::lock_guard<std::mutex> stream_lock(stream_mutex_);
             if (stream_active_ && stream_handler_) {
                 response->success = true;
                 response->message = "Persistent stream control is already active.";
@@ -1994,6 +1950,7 @@ namespace rby1_ros2{
                 RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
             }
         } else {
+            std::lock_guard<std::mutex> stream_lock(stream_mutex_);
             if (stream_handler_) {
                 stream_handler_.reset();
             }
