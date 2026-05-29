@@ -58,7 +58,7 @@ Located at `rby1_driver/config/driver_parameters.yaml`.
 Edit this file to match your robot before launching the driver.  
 Because the workspace was built with `--symlink-install`, **no rebuild is needed** after editing.
 
-> [!NOTE]
+> [!IMPORTANT]
 > For simulation testing, keep `robot_ip: "127.0.0.1:50051"`.  
 > Some state values (battery, tool flange FT/IMU) will show zeros in simulation because no physical sensors are attached.
 
