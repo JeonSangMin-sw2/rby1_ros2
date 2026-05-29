@@ -78,13 +78,13 @@ class BrakeControlExample(Node):
     # Helpers
     # ------------------------------------------------------------------
     def _spin_for(self, seconds: float):
-        """지정된 시간 동안 spin하며 콜백을 처리합니다."""
+        """Spin the node for a specified duration to process callbacks."""
         deadline = time.time() + seconds
         while time.time() < deadline and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.05)
 
     def _wait_for_state(self, target_state: int, timeout: float = 5.0) -> bool:
-        """target_state가 될 때까지 최대 timeout 초 동안 대기합니다."""
+        """Wait for the Control Manager state to match target_state."""
         deadline = time.time() + timeout
         while time.time() < deadline and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.05)
@@ -104,7 +104,7 @@ class BrakeControlExample(Node):
         return names.get(state, f'UNKNOWN({state})')
 
     def _wait_for_services(self, timeout: float = 10.0) -> bool:
-        """필요한 서비스가 모두 준비될 때까지 대기합니다."""
+        """Wait for all required services to become available."""
         for client, name in [
             (self.control_manager_client, 'control_manager_command'),
             (self.power_client, 'robot_power'),
@@ -145,10 +145,10 @@ class BrakeControlExample(Node):
         return res.success
 
     def send_brake_cmd(self, joint_name: str, engage: bool) -> bool:
-        """브레이크 engage(True) / release(False) 요청을 보냅니다."""
+        """Send engage (True) or release (False) request to a joint brake."""
         req = StateOnOff.Request()
         req.parameters = joint_name
-        req.state = engage  # True = engage(잠금), False = release(해제)
+        req.state = engage  # True = engage, False = release
 
         op = 'ENGAGE' if engage else 'RELEASE'
         self.get_logger().info(f'Brake {op} → joint: {joint_name}')
@@ -188,7 +188,7 @@ class BrakeControlExample(Node):
         cur = self._state_name(self.control_manager_state)
         self.get_logger().info(f'Current Control Manager State: {cur}')
 
-        # Check if 48V power is ON
+        # Check if 48V power is ON, and enable it if it is OFF
         self.get_logger().info('Checking 48V power status...')
         req = StateOnOff.Request()
         req.state = True
@@ -205,10 +205,12 @@ class BrakeControlExample(Node):
             return
 
         if 'already ON' not in res.message:
-            self.get_logger().info('48V power was OFF. Successfully enabled 48V power. Exiting program.')
-            return
+            self.get_logger().info('48V power was OFF. Successfully enabled 48V power.')
+            time.sleep(1.0) # Wait a moment for power to stabilize
+        else:
+            self.get_logger().info('48V power is already ON.')
 
-        self.get_logger().info('48V power is already ON. Proceeding with brake control test...')
+        self.get_logger().info('Proceeding with brake control test preparation...')
 
         # 2. Handle FAULT states: reset to get to IDLE
         if self.control_manager_state in [
