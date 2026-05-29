@@ -36,4 +36,4 @@
     # Status publish triggers
     publish_battery_state: true
     publish_tool_flange_state: true
-    
+     

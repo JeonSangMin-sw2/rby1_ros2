@@ -8,3 +8,4 @@ bool state false
 # Service Response definition
 # True if state toggle succeeded, False if rejected (e.g. active safety locks active)
 bool response
+ 

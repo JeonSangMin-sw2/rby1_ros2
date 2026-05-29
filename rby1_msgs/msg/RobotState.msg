@@ -20,3 +20,4 @@ bool emo_state false
 
 # Calculated Center of Mass (CoM) coordinates: [x, y, z] in meters
 float64[3] center_of_mass
+ 

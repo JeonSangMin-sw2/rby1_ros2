@@ -42,3 +42,4 @@ namespace rby1_ros2{
         double se2_angular_acceleration_limit;
     };
 }
+ 

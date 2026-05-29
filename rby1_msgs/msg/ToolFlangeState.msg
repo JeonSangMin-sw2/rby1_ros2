@@ -29,3 +29,4 @@ bool digital_output_a
 
 # State of general-purpose digital output B (True if High, False if Low)
 bool digital_output_b
+ 

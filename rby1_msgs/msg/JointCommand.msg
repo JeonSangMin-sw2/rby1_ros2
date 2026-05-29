@@ -30,3 +30,4 @@ float64 damping_ratio 1.0
 
 # Torque safety limits for impedance control
 float64 torque_limit 10.0
+ 

@@ -39,3 +39,4 @@ string add_joint_name
 
 # Target position value for the additional joint (rad or meters)
 float64 add_joint_value
+ 

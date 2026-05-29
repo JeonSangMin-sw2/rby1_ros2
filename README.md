@@ -410,4 +410,4 @@ ros2 launch rby1_description rby1_state_publisher.launch.py model:=a version:=1_
 
   ```bash
   ros2 service call /stream_control rby1_msgs/srv/StateOnOff "{state: false}"
-  ```
+  ``` 

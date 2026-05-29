@@ -1964,4 +1964,4 @@ namespace rby1_ros2{
     // Explicit template instantiations
     template class RBY1_ROS2_DRIVER<rb::y1_model::A>;
     template class RBY1_ROS2_DRIVER<rb::y1_model::M>;
-}
+} 
