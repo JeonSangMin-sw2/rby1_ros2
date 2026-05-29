@@ -1,5 +1,8 @@
 # RBY1 ROS 2 Driver Package
 
+> [!CAUTION]
+> The current driver is in beta. For safe use, please test the features in a simulation first.
+
 ## Overview
 
 `rby1_ros2` is a unified ROS 2 driver package for controlling the Rainbow Robotics RBY1 robot.  
