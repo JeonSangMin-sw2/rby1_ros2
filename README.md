@@ -1,6 +1,6 @@
 # RBY1 ROS 2 Driver Package
 
-> # [!CAUTION]
+> [!CAUTION]
 > ## The current driver is in beta. For safe use, please test the features in a simulation first.
 
 ## Overview
