@@ -103,8 +103,14 @@ sudo docker run --rm \
 ```bash
 # In your workspace root
 source install/setup.bash
+
+# Option A: Launch normally
 ros2 launch rby1_driver rby1_ros2_driver.launch.py
+
+# Option B: Launch with a custom namespace (topic names remain relative)
+ros2 launch rby1_driver rby1_ros2_driver.launch.py namespace:=my_robot
 ```
+
 ### 1-8. Run Examples
 
 Each example can be run in a **separate terminal** while the driver is active:
@@ -115,19 +121,20 @@ ros2 run rby1_examples <example_name>
 
 | Example | Command | Description |
 |---------|---------|-------------|
-| `zero_pose` | `ros2 run rby1_examples zero_pose` | Moves all joints to 0 rad simultaneously |
-| `joint_command` | `ros2 run rby1_examples joint_command` | Sends Ready Pose → Zero Pose via joint position action |
-| `cartesian_command` | `ros2 run rby1_examples cartesian_command` | Moves the right arm to a target Cartesian pose |
-| `multi_controls` | `ros2 run rby1_examples multi_controls` | Simultaneous joint + Cartesian control per body part |
-| `cancel_control` | `ros2 run rby1_examples cancel_control` | Demonstrates action cancel and Trigger service cancel |
-| `gravity_compensation` | `ros2 run rby1_examples gravity_compensation` | Enables gravity compensation (direct teaching) mode |
-| `stream_joint_control` | `ros2 run rby1_examples stream_joint_control` | Streams a pre-computed JointTrajectory to the robot |
-| `power_control` | `ros2 run rby1_examples power_control` | Full power lifecycle: Power ON/OFF, Servo ON/OFF |
-| `brake_control` | `ros2 run rby1_examples brake_control` | Releases and re-engages arm brakes via IDLE state |
-| `joint_state_monitoring` | `ros2 run rby1_examples joint_state_monitoring` | Prints per-component joint positions in real time |
-| `robot_status_monitor` | `ros2 run rby1_examples robot_status_monitor` | Comprehensive state monitor (CM state, brakes, battery, FT) |
-| `tool_flange_monitoring` | `ros2 run rby1_examples tool_flange_monitoring` | Continuously prints tool flange FT/IMU/IO data |
-| `tool_flange_test` | `ros2 run rby1_examples tool_flange_test` | Power-cycles the tool flange and reads sensor state |
+| `01_power_control` | `ros2 run rby1_examples 01_power_control` | Full power lifecycle: Power ON/OFF, Servo ON/OFF |
+| `02_zero_pose` | `ros2 run rby1_examples 02_zero_pose` | Moves all joints to 0 rad simultaneously |
+| `03_robot_status_monitor` | `ros2 run rby1_examples 03_robot_status_monitor` | Comprehensive state monitor (CM state, brakes, battery, FT) |
+| `04_tool_flange_monitoring` | `ros2 run rby1_examples 04_tool_flange_monitoring` | Continuously prints tool flange FT/IMU/IO data |
+| `05_joint_state_monitoring` | `ros2 run rby1_examples 05_joint_state_monitoring` | Prints per-component joint positions in real time |
+| `06_brake_control` | `ros2 run rby1_examples 06_brake_control` | Releases and re-engages arm brakes via IDLE state |
+| `07_tool_flange_test` | `ros2 run rby1_examples 07_tool_flange_test` | Power-cycles the tool flange and reads sensor state |
+| `08_joint_command` | `ros2 run rby1_examples 08_joint_command` | Sends Ready Pose → Zero Pose via joint position action |
+| `09_cartesian_command` | `ros2 run rby1_examples 09_cartesian_command` | Moves the right arm to a target Cartesian pose |
+| `10_multi_controls` | `ros2 run rby1_examples 10_multi_controls` | Simultaneous joint + Cartesian control per body part |
+| `11_cancel_control` | `ros2 run rby1_examples 11_cancel_control` | Demonstrates action cancel and Trigger service cancel |
+| `12_stream_joint_control` | `ros2 run rby1_examples 12_stream_joint_control` | Streams a pre-computed trajectory via persistent command streams |
+| `13_gravity_compensation` | `ros2 run rby1_examples 13_gravity_compensation` | Enables gravity compensation (direct teaching) mode |
+| `14_mobile_base_control` | `ros2 run rby1_examples 14_mobile_base_control` | Drives robot wheels via relative cmd_vel Twists |
 
 ---
 
@@ -205,12 +212,19 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 | `joint_states/battery_state` | `sensor_msgs/BatteryState` | ⚙️ `publish_battery_state` | Battery voltage, current, percentage |
 | `joint_states/tool_flange/left` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Left flange: FT sensor, IMU, switch, voltage, digital I/O |
 | `joint_states/tool_flange/right` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Right flange: FT sensor, IMU, switch, voltage, digital I/O |
+| `odom` | `nav_msgs/Odometry` | ✅ | High-rate robot odometry and TF broadcast relative to node namespace |
+
+### 5-2. Topics (Subscribers)
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `cmd_vel` | `geometry_msgs/Twist` | Velocity command for driving base wheels (linear x, y and angular z) |
 
 > ⚙️ = controlled by the corresponding flag in `driver_parameters.yaml`
 
 ---
 
-### 5-2. Services
+### 5-3. Services
 
 | Service | Type | Description |
 |---------|------|-------------|
@@ -222,6 +236,7 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 | `get_cartesian_pose` | `rby1_msgs/GetCartesianPose` | Query Cartesian transform between two links |
 | `control_manager_command` | `rby1_msgs/ControlManagerCommand` | Send `CMD_ENABLE` / `CMD_DISABLE` / `CMD_RESET` to the Control Manager |
 | `set_motor_brake` | `rby1_msgs/StateOnOff` | Engage (`state=true`) or release (`state=false`) a joint brake. `parameters`: joint name (e.g. `"right_arm_3"`). Only available in `STATE_IDLE`. |
+| `stream_control` | `rby1_msgs/StateOnOff` | Enable/disable persistent streaming mode with 10-minute hold times (`state=true` to enable, `state=false` to disable) |
 
 #### `ControlManagerCommand` constants
 

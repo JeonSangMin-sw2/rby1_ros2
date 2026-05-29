@@ -44,6 +44,31 @@ class RobotStatusMonitor(Node):
         self.tf_right_sub = self.create_subscription(
             ToolFlangeState, 'joint_states/tool_flange/right', lambda msg: self.tf_callback(msg, 'Right'), 10)
 
+        # Verify robot state topic is active
+        if not self.verify_topic_active('joint_states/robot_state', timeout=1.5):
+            self.get_logger().error(
+                "Error: Topic 'joint_states/robot_state' is not active!\n"
+                "Please make sure the RBY1 ROS 2 driver is running."
+            )
+            import sys
+            sys.exit(1)
+
+    def verify_topic_active(self, topic_name, timeout=1.5):
+        import time
+        start_time = time.time()
+        resolved_topic = self.resolve_topic_name(topic_name)
+        while rclpy.ok():
+            try:
+                pub_info = self.get_publishers_info_by_topic(resolved_topic)
+                if len(pub_info) > 0:
+                    return True
+            except Exception as e:
+                pass
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if time.time() - start_time > timeout:
+                break
+        return False
+
     def robot_state_callback(self, msg):
         self.get_logger().info('=== Robot State Update ===')
         # Print Control Manager State

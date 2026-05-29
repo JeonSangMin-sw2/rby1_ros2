@@ -8,6 +8,9 @@
 //ros2
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "tf2_ros/transform_broadcaster.h"
 #include "rby1_msgs/msg/brake_state.hpp"
 #include "rby1_msgs/msg/robot_state.hpp"
 #include "rby1_msgs/msg/tool_flange_state.hpp"
@@ -78,6 +81,11 @@ namespace rby1_ros2{
             rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state_pub_;
             rclcpp::Publisher<rby1_msgs::msg::ToolFlangeState>::SharedPtr tool_flange_left_pub_;
             rclcpp::Publisher<rby1_msgs::msg::ToolFlangeState>::SharedPtr tool_flange_right_pub_;
+            rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+            std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+            rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+            bool stream_active_{false};
+            bool collision_enable_{false};
 
             // Timer for 100Hz publishing
             rclcpp::TimerBase::SharedPtr joint_state_timer_;
@@ -98,6 +106,7 @@ namespace rby1_ros2{
             rclcpp::Service<rby1_msgs::srv::GetCartesianPose>::SharedPtr get_cartesian_pose_service_;
             rclcpp::Service<rby1_msgs::srv::ControlManagerCommand>::SharedPtr control_manager_service_;
             rclcpp::Service<rby1_msgs::srv::StateOnOff>::SharedPtr motor_brake_service_;
+            rclcpp::Service<rby1_msgs::srv::StateOnOff>::SharedPtr stream_control_service_;
 
             void gravity_compensation_callback(const std::shared_ptr<rby1_msgs::srv::GravityCompensation::Request> request,
                                                std::shared_ptr<rby1_msgs::srv::GravityCompensation::Response> response);
@@ -105,6 +114,9 @@ namespace rby1_ros2{
                                           std::shared_ptr<rby1_msgs::srv::ControlManagerCommand::Response> response);
             void motor_brake_callback(const std::shared_ptr<rby1_msgs::srv::StateOnOff::Request> request,
                                       std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response);
+            void stream_control_callback(const std::shared_ptr<rby1_msgs::srv::StateOnOff::Request> request,
+                                         std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response);
+            void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
             
             geometry_msgs::msg::Pose matrix_to_pose(const Eigen::Matrix4d& matrix);
 

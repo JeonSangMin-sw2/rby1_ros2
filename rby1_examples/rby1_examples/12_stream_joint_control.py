@@ -2,49 +2,36 @@
 """
 Stream Joint Control Example
 ============================
-Demonstrates real-time joint trajectory streaming to the RBY1 robot
-using the StreamPosition action. A pre-computed JointTrajectory message
-is sent as a single goal containing all waypoints; the driver then
-interpolates and executes them at the requested timing.
+A comprehensive test and demonstration of the modernized persistent stream control
+feature in the RBY1 ROS 2 driver.
 
-Sequence:
-  1. Ensure robot is powered on and servos are active.
-  2. Move whole body to zero pose (safe starting posture).
-  3. Build a JointTrajectory with 10 waypoints interpolated from
-     zero to a target multi-joint configuration over 5 seconds.
-  4. Send the trajectory via the StreamPosition action.
-  5. Wait for the action to complete and report the result.
-
-Run:
-  ros2 run rby1_examples stream_joint_control
-
-Actions used:
-  - joint_states/stream_position_command  (StreamPosition)
-
-Services used:
-  - robot_power  (StateOnOff)
-  - robot_servo  (StateOnOff)
-
-Topics subscribed:
-  - joint_states/robot_state  (RobotState)
+This example:
+  1. Ensures the robot is powered and enabled.
+  2. Sets joint position control mode.
+  3. Calls the '/stream_control' service to enable a persistent stream (minimum 10-minute hold).
+  4. Sends a standard Rby1JointCommand action goal which will be executed via stream.
+  5. Interludes: returns to Zero Pose.
+  6. Sends a whole-body trajectory via the StreamPosition action client.
+  7. Disables the persistent command stream by calling '/stream_control' with state=False.
 """
 import time
 import rclpy
-from rclpy.action import ActionClient
 from rclpy.node import Node
-from rby1_msgs.action import StreamPosition, MultiJointCommand
-from rby1_msgs.msg import RobotState
-from rby1_msgs.srv import ControlMode, StateOnOff
+from rclpy.action import ActionClient
+from rby1_msgs.action import StreamPosition, Rby1JointCommand
+from rby1_msgs.msg import RobotState, JointCommand
+from rby1_msgs.srv import StateOnOff
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 class StreamJointControl(Node):
     def __init__(self):
         super().__init__('stream_joint_control')
-        self._stream_client = ActionClient(self, StreamPosition, '/joint_states/stream_position_command')
-        self._multi_client = ActionClient(self, MultiJointCommand, '/joint_states/multi_position_command')
-        self.control_mode_client = self.create_client(ControlMode, 'set_control_mode')
+        self._stream_client = ActionClient(self, StreamPosition, 'joint_states/stream_position_command')
+        self._zero_pose_client = ActionClient(self, Rby1JointCommand, 'robot_joint')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
+        self.stream_control_client = self.create_client(StateOnOff, 'stream_control')
+        
         self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
         self.control_state = None
 
@@ -102,27 +89,39 @@ class StreamJointControl(Node):
             self.get_logger().error(f'Timed out waiting for robot to enable. Current state: {self.control_state}')
             return False
 
-    def send_control_mode_request(self, part_name, control_type):
-        req = ControlMode.Request()
-        req.part_name = part_name
-        req.control_type = control_type
-        self.get_logger().info(f'Setting Control Mode for {part_name}...')
-        self.control_mode_client.wait_for_service()
-        future = self.control_mode_client.call_async(req)
+    def toggle_stream(self, enable: bool) -> bool:
+        req = StateOnOff.Request()
+        req.state = enable
+        req.parameters = ""
+        self.get_logger().info(f"Calling stream_control: state={enable}...")
+        self.stream_control_client.wait_for_service()
+        future = self.stream_control_client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
-        return future.result()
+        res = future.result()
+        if res and res.success:
+            self.get_logger().info(f"Stream Control successfully {'enabled' if enable else 'disabled'}.")
+            return True
+        else:
+            self.get_logger().error(f"Failed to toggle stream control: {res.message if res else 'No response'}")
+            return False
 
     def go_to_zero_pose(self):
-        self.get_logger().info('Step 1: Moving to Zero Pose...')
-        goal_msg = MultiJointCommand.Goal()
-        goal_msg.torso = [0.0] * 6
-        goal_msg.right_arm = [0.0] * 7
-        goal_msg.left_arm = [0.0] * 7
-        goal_msg.head = [0.0] * 2
-        goal_msg.minimum_time = 3.0
+        self.get_logger().info('Moving Whole Body to Zero Pose...')
+        goal_msg = Rby1JointCommand.Goal()
         
-        self._multi_client.wait_for_server()
-        future = self._multi_client.send_goal_async(goal_msg)
+        for part in ['torso', 'right_arm', 'left_arm', 'head']:
+            cmd = JointCommand()
+            if part == 'torso':
+                cmd.position = [0.0] * 6
+            elif part == 'head':
+                cmd.position = [0.0] * 2
+            elif part in ['right_arm', 'left_arm']:
+                cmd.position = [0.0] * 7
+            cmd.minimum_time = 3.0
+            setattr(goal_msg, part, cmd)
+        
+        self._zero_pose_client.wait_for_server()
+        future = self._zero_pose_client.send_goal_async(goal_msg)
         rclpy.spin_until_future_complete(self, future)
         goal_handle = future.result()
         
@@ -130,7 +129,7 @@ class StreamJointControl(Node):
             res_future = goal_handle.get_result_async()
             rclpy.spin_until_future_complete(self, res_future)
             result = res_future.result().result
-            if result.finish_code == 'kOk':
+            if result.success:
                 self.get_logger().info('Zero Pose reached successfully.')
                 return True
             else:
@@ -139,7 +138,7 @@ class StreamJointControl(Node):
         return True
 
     def send_stream_goal(self, trajectory):
-        self.get_logger().info('Step 2: Starting Trajectory Streaming...')
+        self.get_logger().info('Starting Trajectory Streaming...')
         goal_msg = StreamPosition.Goal()
         goal_msg.trajectory = trajectory
 
@@ -155,30 +154,27 @@ def main(args=None):
         action_client.get_logger().error('Failed to prepare robot. Exiting.')
         return
 
-    # 1. Set Control Mode for all parts
-    parts = ["torso", "right_arm", "left_arm", "head"]
-    for part in parts:
-        action_client.send_control_mode_request(part, ControlMode.Request.JOINT_POSITION)
-
-    import time
-    time.sleep(0.5)
-
-    # 2. First move Whole Body to Zero Pose
+    # 2. Establish starting Zero Pose
     if not action_client.go_to_zero_pose():
-        action_client.get_logger().error('Failed to move to Zero Pose.')
+        action_client.get_logger().error('Failed to establish zero pose.')
         return
 
-    # 3. Define target positions from multi_joint example
+    # 3. Enable Persistent Command Stream
+    if not action_client.toggle_stream(True):
+        action_client.get_logger().error('Failed to enable command stream. Exiting.')
+        return
+
+    time.sleep(1.0)
+
+    # 4. Stream trajectory points to a target pose
     target_torso = [0.0, 0.1, -0.2, 0.1, 0.0, 0.0]
     target_right = [0.0, -0.5, 0.0, -1.57, 0.0, 0.0, 0.0]
     target_left  = [0.0, 0.5, 0.0, -1.57, 0.0, 0.0, 0.0]
     target_head  = [0.0, 0.0]
 
-    # Combine into one full-body target vector
     full_target = target_torso + target_right + target_left + target_head
     full_start  = [0.0] * len(full_target)
     
-    # Define joint names for the entire robot (order must match the vector)
     joint_names = [f'torso_{i}' for i in range(6)] + \
                   [f'right_arm_{i}' for i in range(7)] + \
                   [f'left_arm_{i}' for i in range(7)] + \
@@ -187,22 +183,16 @@ def main(args=None):
     trajectory = JointTrajectory()
     trajectory.joint_names = joint_names
     
-    # Create trajectory from Zero to Target in 10 steps
+    # Create linear interpolation points
     for i in range(1, 11):
         point = JointTrajectoryPoint()
-        # Linear interpolation for all 22 joints
         point.positions = [(s + (t - s) * i / 10.0) for s, t in zip(full_start, full_target)]
         total_ms = i * 500
         point.time_from_start.sec = total_ms // 1000
         point.time_from_start.nanosec = (total_ms % 1000) * 1000000
         trajectory.points.append(point)
 
-    action_client.get_logger().info(f'Streaming 22 joints to multi_joint pose over 5 seconds...')
-    
-    # Wait a bit for the previous action to fully settle in SDK
-    import time
-    time.sleep(2.0)
-
+    action_client.get_logger().info('Sending whole-body trajectory via persistent stream...')
     future = action_client.send_stream_goal(trajectory)
     rclpy.spin_until_future_complete(action_client, future)
     goal_handle = future.result()
@@ -211,7 +201,16 @@ def main(args=None):
         get_result_future = goal_handle.get_result_async()
         rclpy.spin_until_future_complete(action_client, get_result_future)
         result = get_result_future.result().result
-        action_client.get_logger().info(f'StreamPosition finished. Code: {result.finish_code}')
+        action_client.get_logger().info(f'Trajectory streaming completed: finish_code={result.finish_code}')
+
+    time.sleep(2.0)
+
+    # 5. Disable persistent Command Stream
+    action_client.toggle_stream(False)
+
+    time.sleep(1.0)
+    action_client.get_logger().info('Returning to Zero Pose.')
+    action_client.go_to_zero_pose()
 
     action_client.destroy_node()
     rclpy.shutdown()

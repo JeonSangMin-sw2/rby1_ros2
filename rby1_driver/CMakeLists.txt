@@ -24,6 +24,10 @@ find_package(sensor_msgs REQUIRED)
 find_package(rby1_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 include_directories(/
   ${RBY1_SDK_PATH}/include
@@ -42,13 +46,17 @@ add_executable(rby1_ros2_driver
  src/main.cpp
 )
 
-ament_target_dependencies(rby1_ros2_driver
+ ament_target_dependencies(rby1_ros2_driver
  rclcpp
  rclcpp_action
  sensor_msgs
  rby1_msgs
  std_srvs
  trajectory_msgs
+ nav_msgs
+ geometry_msgs
+ tf2
+ tf2_ros
 )
 
 target_link_directories(rby1_ros2_driver PRIVATE ${RBY1_SDK_PATH}/build/src)

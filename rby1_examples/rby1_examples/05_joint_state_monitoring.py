@@ -29,13 +29,13 @@ class JointStateMonitoring(Node):
         
         # Subscribe to standard JointState topics for different components
         self.torso_sub = self.create_subscription(
-            JointState, '/joint_states/torso', lambda msg: self.joint_state_callback(msg, 'Torso'), 10)
+            JointState, 'joint_states/torso', lambda msg: self.joint_state_callback(msg, 'Torso'), 10)
         self.right_arm_sub = self.create_subscription(
-            JointState, '/joint_states/right_arm', lambda msg: self.joint_state_callback(msg, 'Right Arm'), 10)
+            JointState, 'joint_states/right_arm', lambda msg: self.joint_state_callback(msg, 'Right Arm'), 10)
         self.left_arm_sub = self.create_subscription(
-            JointState, '/joint_states/left_arm', lambda msg: self.joint_state_callback(msg, 'Left Arm'), 10)
+            JointState, 'joint_states/left_arm', lambda msg: self.joint_state_callback(msg, 'Left Arm'), 10)
         self.head_sub = self.create_subscription(
-            JointState, '/joint_states/head', lambda msg: self.joint_state_callback(msg, 'Head'), 10)
+            JointState, 'joint_states/head', lambda msg: self.joint_state_callback(msg, 'Head'), 10)
 
     def joint_state_callback(self, msg, part_name):
         # We only print the first 3 joint positions to avoid terminal flooding

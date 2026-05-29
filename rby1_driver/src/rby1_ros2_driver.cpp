@@ -89,6 +89,14 @@ namespace rby1_ros2{
                 motor_brake_service_ = this->create_service<rby1_msgs::srv::StateOnOff>(
                     "set_motor_brake", std::bind(&RBY1_ROS2_DRIVER<ModelType>::motor_brake_callback, this, _1, _2));
                 
+                stream_control_service_ = this->create_service<rby1_msgs::srv::StateOnOff>(
+                    "stream_control", std::bind(&RBY1_ROS2_DRIVER<ModelType>::stream_control_callback, this, _1, _2));
+
+                odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
+                tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+                cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+                    "cmd_vel", 10, std::bind(&RBY1_ROS2_DRIVER<ModelType>::cmd_vel_callback, this, _1));
+
                 /* we need to add tool flange on/off service*/
 
                 stream_position_action_server_ = rclcpp_action::create_server<StreamPosition>(
@@ -131,9 +139,6 @@ namespace rby1_ros2{
         RCLCPP_INFO(this->get_logger(), "Declaring parameters...");
         this->declare_parameter<std::string>("robot_ip", "127.0.0.1:50051");
         this->declare_parameter<std::string>("model", "a");
-        this->declare_parameter<std::string>("state_topic_name", "joint_states");
-        this->declare_parameter<std::string>("joint_position_topic_name", "");
-        this->declare_parameter<std::string>("cartesian_position_topic_name", "");
         this->declare_parameter<std::vector<std::string>>("power_on", {"all"});
         this->declare_parameter<std::vector<std::string>>("servo_on", {"all"});
 
@@ -150,13 +155,14 @@ namespace rby1_ros2{
         this->declare_parameter<double>("collision_threshold", 0.03);
         this->declare_parameter<bool>("publish_battery_state", false);
         this->declare_parameter<bool>("publish_tool_flange_state", false);
+        this->declare_parameter<bool>("collision_enable", false);
         
         this->get_parameter("robot_ip", address);
         this->get_parameter("model", model);
-        this->get_parameter("state_topic_name", state_topic_name);
-        this->get_parameter("joint_position_topic_name", joint_position_topic_name);
-        this->get_parameter("cartesian_position_topic_name", cartesian_position_topic_name);
         
+        state_topic_name = "joint_states";
+        joint_position_topic_name = "robot_joint";
+        cartesian_position_topic_name = "robot_cartesian";
 
         this->get_parameter("power_on", robot_parameter_.power_on_list);
         this->get_parameter("servo_on", robot_parameter_.servo_on_list);
@@ -172,6 +178,7 @@ namespace rby1_ros2{
         this->get_parameter("collision_threshold", collision_threshold_);
         this->get_parameter("publish_battery_state", publish_battery_state_);
         this->get_parameter("publish_tool_flange_state", publish_tool_flange_state_);
+        this->get_parameter("collision_enable", collision_enable_);
 
 
 
@@ -343,19 +350,17 @@ namespace rby1_ros2{
                                                     std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response) {
         // Parse parameters string
         int tool_flange_vol = 0;
-        //if (address != "127.0.0.1:50051"){
-            if(request->parameters == "12"){
+        if (request->state) {
+            if(request->parameters == "12" || request->parameters == "12v"){
                 tool_flange_vol = 12;
-            }else if(request->parameters == "24"){
+            }else if(request->parameters == "24" || request->parameters == "24v"){
                 tool_flange_vol = 24;
             }else{
                 RCLCPP_INFO(this->get_logger(), "Invalid parameters: %s", request->parameters.c_str());
                 response->success = false;
-                response->message = "Invalid parameters";
+                response->message = "Invalid parameters (must be '12', '12v', '24', or '24v')";
                 return;
             }
-        //}
-        if (request->state) {
             RCLCPP_INFO(this->get_logger(), "set tool flange output voltage [%d]", tool_flange_vol);
             bool right_success = robot_->SetToolFlangeOutputVoltage("right",tool_flange_vol);
             bool left_success = robot_->SetToolFlangeOutputVoltage("left",tool_flange_vol);
@@ -522,8 +527,8 @@ namespace rby1_ros2{
                 robot_state_.state = NONE;
             }
 
-            // Collision check (always on if objects detected)
-            if (!state.collisions.empty()) {
+            // Collision check (respect collision_enable_)
+            if (collision_enable_ && !state.collisions.empty()) {
                 double min_dist = 1e9;
                 std::string link1, link2;
                 for (const auto& col : state.collisions) {
@@ -537,6 +542,11 @@ namespace rby1_ros2{
                     RCLCPP_ERROR(this->get_logger(), "Collision detected! Distance: %.4f (Links: %s <-> %s). Canceling control.", 
                                  min_dist, link1.c_str(), link2.c_str());
                     robot_->CancelControl();
+                    if (stream_handler_) {
+                        stream_handler_.reset();
+                    }
+                    is_control_canceled_ = true;
+                    stream_active_ = false;
                 }
             }
             
@@ -562,6 +572,73 @@ namespace rby1_ros2{
             this->right_arm_pub_->publish(this->robot_joint_.joint_right_arm);
             this->left_arm_pub_->publish(this->robot_joint_.joint_left_arm);
             this->head_pub_->publish(this->robot_joint_.joint_head);
+
+            // Base Mobility Odometry publishing
+            {
+                static double last_x = 0.0;
+                static double last_y = 0.0;
+                static double last_theta = 0.0;
+                static bool first_odom = true;
+
+                double x = state.odometry(0, 2);
+                double y = state.odometry(1, 2);
+                double theta = std::atan2(state.odometry(1, 0), state.odometry(0, 0));
+
+                double vx = 0.0;
+                double vy = 0.0;
+                double wz = 0.0;
+
+                double dt = robot_parameter_.get_state_period;
+                if (dt > 0.0 && !first_odom) {
+                    vx = (x - last_x) / dt;
+                    vy = (y - last_y) / dt;
+                    wz = (theta - last_theta) / dt;
+                    if (wz > M_PI / dt) wz -= 2.0 * M_PI / dt;
+                    if (wz < -M_PI / dt) wz += 2.0 * M_PI / dt;
+                }
+                first_odom = false;
+                last_x = x;
+                last_y = y;
+                last_theta = theta;
+
+                double cy = std::cos(theta * 0.5);
+                double sy = std::sin(theta * 0.5);
+
+                geometry_msgs::msg::Quaternion odom_quat;
+                odom_quat.x = 0.0;
+                odom_quat.y = 0.0;
+                odom_quat.z = sy;
+                odom_quat.w = cy;
+
+                // TF frame prefixing is namespace-safe because ROS 2 handles base frames relative to node
+                auto odom_msg = nav_msgs::msg::Odometry();
+                odom_msg.header.stamp = now;
+                odom_msg.header.frame_id = "odom";
+                odom_msg.child_frame_id = "base_footprint";
+
+                odom_msg.pose.pose.position.x = x;
+                odom_msg.pose.pose.position.y = y;
+                odom_msg.pose.pose.position.z = 0.0;
+                odom_msg.pose.pose.orientation = odom_quat;
+
+                odom_msg.twist.twist.linear.x = vx;
+                odom_msg.twist.twist.linear.y = vy;
+                odom_msg.twist.twist.angular.z = wz;
+
+                odom_pub_->publish(odom_msg);
+
+                geometry_msgs::msg::TransformStamped odom_tf;
+                odom_tf.header.stamp = now;
+                odom_tf.header.frame_id = "odom";
+                odom_tf.child_frame_id = "base_footprint";
+
+                odom_tf.transform.translation.x = x;
+                odom_tf.transform.translation.y = y;
+                odom_tf.transform.translation.z = 0.0;
+                odom_tf.transform.rotation = odom_quat;
+
+                tf_broadcaster_->sendTransform(odom_tf);
+            }
             // Publish RobotState
             rby1_msgs::msg::RobotState robot_state_msg;
             robot_state_msg.control_manager_state = static_cast<int32_t>(robot_state_.state);
@@ -726,24 +803,17 @@ namespace rby1_ros2{
             }
         }
 
-        // 1. Ensure robot is ready before creating stream
-        this->check_controll_manager();
-        usleep(100000); // 100ms safety gap
-
-        // 2. Create stream ONLY when we are ready to send
-        std::unique_ptr<rb::RobotCommandStreamHandler<ModelType>> stream_handler;
-        try {
-            stream_handler = robot_->CreateCommandStream();
-            if (!stream_handler) {
-                throw std::runtime_error("Stream handler is null");
-            }
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to create CommandStream: %s", e.what());
+        if (!stream_active_ || !stream_handler_) {
+            RCLCPP_ERROR(this->get_logger(), "Trajectory stream command rejected: stream is not active. Call /stream_control service first.");
             result->success = false;
-            result->finish_code = "kError";
+            result->finish_code = "kRejected";
             goal_handle->abort(result);
             return;
         }
+
+        // 1. Ensure robot is ready before creating stream
+        this->check_controll_manager();
+        usleep(100000); // 100ms safety gap
 
         auto current_state = robot_->GetState();
         Eigen::VectorXd q = Eigen::Map<const Eigen::VectorXd>(current_state.position.data(), current_state.position.size());
@@ -806,7 +876,7 @@ namespace rby1_ros2{
                 comp_builder.SetBodyCommand(rb::BodyCommandBuilder(std::move(body_comp_builder)));
                 comp_builder.SetHeadCommand(head_builder);
 
-                auto feedback = stream_handler->SendCommand(
+                auto feedback = stream_handler_->SendCommand(
                     rb::RobotCommandBuilder().SetCommand(comp_builder)
                 );
 
@@ -835,7 +905,7 @@ namespace rby1_ros2{
         uint32_t wait_ms = static_cast<uint32_t>((total_duration + 2.0) * 1000.0);
         RCLCPP_INFO(this->get_logger(), "Stream sent. Waiting for completion (%u ms)...", wait_ms);
         try {
-            if (!stream_handler->WaitFor(wait_ms)) {
+            if (!stream_handler_->WaitFor(wait_ms)) {
                 RCLCPP_ERROR(this->get_logger(), "Timeout waiting for stream completion (%u ms).", wait_ms);
                 result->success = false;
                 result->finish_code = "kTimeout";
@@ -1075,6 +1145,36 @@ namespace rby1_ros2{
 
             if (use_body) {
                 component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
+            }
+
+            if (stream_active_ && stream_handler_) {
+                RCLCPP_INFO(this->get_logger(), "Streaming joint command via persistent stream...");
+                stream_handler_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
+                
+                double max_min_time = 0.0;
+                if (!goal->torso.position.empty() && goal->torso.minimum_time > max_min_time) max_min_time = goal->torso.minimum_time;
+                if (!goal->right_arm.position.empty() && goal->right_arm.minimum_time > max_min_time) max_min_time = goal->right_arm.minimum_time;
+                if (!goal->left_arm.position.empty() && goal->left_arm.minimum_time > max_min_time) max_min_time = goal->left_arm.minimum_time;
+                if (!goal->head.position.empty() && goal->head.minimum_time > max_min_time) max_min_time = goal->head.minimum_time;
+
+                if (max_min_time <= 0.0) max_min_time = 2.0;
+
+                rclcpp::Rate rate(10);
+                auto start_time = this->now();
+                while (rclcpp::ok() && (this->now() - start_time).seconds() < max_min_time) {
+                    if (goal_handle->is_canceling()) {
+                        result->success = false;
+                        result->finish_code = "kCanceled";
+                        goal_handle->canceled(result);
+                        return;
+                    }
+                    rate.sleep();
+                }
+
+                result->success = true;
+                result->finish_code = "kOk";
+                goal_handle->succeed(result);
+                return;
             }
 
             auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder), goal->priority);
@@ -1328,6 +1428,35 @@ namespace rby1_ros2{
 
             component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
 
+            if (stream_active_ && stream_handler_) {
+                RCLCPP_INFO(this->get_logger(), "Streaming Cartesian command via persistent stream...");
+                stream_handler_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
+                
+                double max_min_time = 0.0;
+                if (!goal->torso.ref_link.empty() && goal->torso.minimum_time > max_min_time) max_min_time = goal->torso.minimum_time;
+                if (!goal->right_arm.ref_link.empty() && goal->right_arm.minimum_time > max_min_time) max_min_time = goal->right_arm.minimum_time;
+                if (!goal->left_arm.ref_link.empty() && goal->left_arm.minimum_time > max_min_time) max_min_time = goal->left_arm.minimum_time;
+
+                if (max_min_time <= 0.0) max_min_time = 2.0;
+
+                rclcpp::Rate rate(10);
+                auto start_time = this->now();
+                while (rclcpp::ok() && (this->now() - start_time).seconds() < max_min_time) {
+                    if (goal_handle->is_canceling()) {
+                        result->success = false;
+                        result->finish_code = "kCanceled";
+                        goal_handle->canceled(result);
+                        return;
+                    }
+                    rate.sleep();
+                }
+
+                result->success = true;
+                result->finish_code = "kOk";
+                goal_handle->succeed(result);
+                return;
+            }
+
             auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder), goal->priority);
             
             rclcpp::Rate rate(10);
@@ -1533,12 +1662,25 @@ namespace rby1_ros2{
             }
 
             bool op_success = false;
-            if (request->state) {
-                RCLCPP_INFO(this->get_logger(), "Received Brake ENGAGE request for joint: %s", request->parameters.c_str());
-                op_success = robot_->BrakeEngage(request->parameters);
+            bool has_brake_hardware = false;
+            for (const auto& joint : info_.joint_infos) {
+                if (joint.name == request->parameters) {
+                    has_brake_hardware = joint.has_brake;
+                    break;
+                }
+            }
+
+            if (!has_brake_hardware) {
+                RCLCPP_WARN(this->get_logger(), "Joint '%s' does not have brake hardware (or running in simulation). Mocking success.", request->parameters.c_str());
+                op_success = true;
             } else {
-                RCLCPP_INFO(this->get_logger(), "Received Brake RELEASE request for joint: %s", request->parameters.c_str());
-                op_success = robot_->BrakeRelease(request->parameters);
+                if (request->state) {
+                    RCLCPP_INFO(this->get_logger(), "Received Brake ENGAGE request for joint: %s", request->parameters.c_str());
+                    op_success = robot_->BrakeEngage(request->parameters);
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "Received Brake RELEASE request for joint: %s", request->parameters.c_str());
+                    op_success = robot_->BrakeRelease(request->parameters);
+                }
             }
 
             if (op_success) {
@@ -1552,6 +1694,76 @@ namespace rby1_ros2{
             response->success = false;
             response->message = std::string("Exception occurred: ") + e.what();
             RCLCPP_ERROR(this->get_logger(), "Brake command exception: %s", e.what());
+        }
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg) {
+        try {
+            double linear_y = msg->linear.y;
+            bool is_m_type = false;
+            for (char c : info_.robot_model_name) {
+                if (c == 'm' || c == 'M') {
+                    is_m_type = true;
+                    break;
+                }
+            }
+
+            if (linear_y != 0.0 && !is_m_type) {
+                RCLCPP_ERROR(this->get_logger(), 
+                             "[VELOCITY ERROR] Sideways linear velocity (y = %.3f m/s) is ignored. "
+                             "This robot model (%s) is not an 'm'-type (mecanum base) robot and does not support lateral translation.",
+                             linear_y, info_.robot_model_name.c_str());
+                linear_y = 0.0;
+            }
+
+            Eigen::Vector2d linear_vel(msg->linear.x, linear_y);
+            double angular_vel = msg->angular.z;
+
+            rb::SE2VelocityCommandBuilder se2_cmd;
+            se2_cmd.SetVelocity(linear_vel, angular_vel);
+
+            rb::MobilityCommandBuilder mobility_cmd;
+            mobility_cmd.SetCommand(se2_cmd);
+
+            rb::ComponentBasedCommandBuilder component_cmd;
+            component_cmd.SetMobilityCommand(mobility_cmd);
+
+            rb::RobotCommandBuilder robot_cmd;
+            robot_cmd.SetCommand(component_cmd);
+
+            robot_->SendCommand(robot_cmd);
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Exception in cmd_vel_callback: %s", e.what());
+        }
+    }
+
+    template <typename ModelType>
+    void RBY1_ROS2_DRIVER<ModelType>::stream_control_callback(
+        const std::shared_ptr<rby1_msgs::srv::StateOnOff::Request> request,
+        std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (request->state) {
+            try {
+                // When stream is ON, create command stream
+                stream_handler_ = robot_->CreateCommandStream();
+                stream_active_ = true;
+                response->success = true;
+                response->message = "Persistent stream control activated successfully.";
+                RCLCPP_INFO(this->get_logger(), "Persistent stream control activated.");
+            } catch (const std::exception& e) {
+                response->success = false;
+                response->message = std::string("Failed to activate stream control: ") + e.what();
+                RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
+            }
+        } else {
+            if (stream_handler_) {
+                stream_handler_.reset();
+            }
+            stream_active_ = false;
+            response->success = true;
+            response->message = "Persistent stream control deactivated.";
+            RCLCPP_INFO(this->get_logger(), "Persistent stream control deactivated.");
         }
     }
 

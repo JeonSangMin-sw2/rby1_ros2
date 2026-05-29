@@ -173,8 +173,8 @@ class CartesianCommandExample(Node):
         cmd_left.use_impedance = True
         cmd_left.transform = left_transform
         cmd_left.transform.translation.z += 0.05
-        cmd_left.translation_weight = [1500.0, 1500.0, 1500.0]
-        cmd_left.rotation_weight = [150.0, 150.0, 150.0]
+        cmd_left.translation_weight = [500.0, 500.0, 500.0]
+        cmd_left.rotation_weight = [50.0, 50.0, 50.0]
         cmd_left.control_hold_time = 5.0
         cmd_left.minimum_time = 5.0
         goal_msg.left_arm = cmd_left
