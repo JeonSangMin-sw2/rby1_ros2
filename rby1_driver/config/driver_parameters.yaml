@@ -19,6 +19,11 @@
     stop_orientation_tracking_error: 1e-5
     stop_position_tracking_error: 1e-5
 
+    # SE2/Mobile base parameters for smooth streaming control
+    se2_minimum_time: 0.05 # seconds
+    se2_linear_acceleration_limit: 2.0
+    se2_angular_acceleration_limit: 4.0
+
 
     # additional options
     fault_reset_trigger: false # 초기화 단계에서 major, minor fault가 뜨면 자동으로 리셋해서 다시 연결하게 할건지

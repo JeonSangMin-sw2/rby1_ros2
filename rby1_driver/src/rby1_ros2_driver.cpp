@@ -49,10 +49,10 @@ namespace rby1_ros2{
                         }
                         
                         RCLCPP_INFO(this->get_logger(), "=== ROBOT JOINT PHYSICAL LIMITS ===");
-                        for (size_t i = 0; i < dyn_joint_names_.size(); ++i) {
-                            RCLCPP_INFO(this->get_logger(), "Joint [%zu] %s: Pos=[%.3f, %.3f] rad, Vel_Max=%.3f rad/s, Accel_Max=%.3f rad/s^2",
-                                        i, dyn_joint_names_[i].c_str(), q_lower_[i], q_upper_[i], qdot_upper_[i], qddot_upper_[i]);
-                        }
+                        // for (size_t i = 0; i < dyn_joint_names_.size(); ++i) {
+                        //     RCLCPP_INFO(this->get_logger(), "Joint [%zu] %s: Pos=[%.3f, %.3f] rad, Vel_Max=%.3f rad/s, Accel_Max=%.3f rad/s^2",
+                        //                 i, dyn_joint_names_[i].c_str(), q_lower_[i], q_upper_[i], qdot_upper_[i], qddot_upper_[i]);
+                        // }
                     } catch (const std::exception& e) {
                         RCLCPP_WARN(this->get_logger(), "\033[1;33m[DYNAMICS WARNING] Failed to load dynamics model: %s. Cartesian poses and impedance features will be disabled.\033[0m", e.what());
                     }
@@ -165,6 +165,9 @@ namespace rby1_ros2{
         this->declare_parameter<double>("acceleration_limit", 1.0);
         this->declare_parameter<double>("stop_orientation_tracking_error", 1e-5);
         this->declare_parameter<double>("stop_position_tracking_error", 1e-5);
+        this->declare_parameter<double>("se2_minimum_time", 0.05);
+        this->declare_parameter<double>("se2_linear_acceleration_limit", 2.0);
+        this->declare_parameter<double>("se2_angular_acceleration_limit", 4.0);
         
         this->declare_parameter<bool>("fault_reset_trigger", false);
         this->declare_parameter<bool>("node_power_off_trigger",false);
@@ -179,7 +182,7 @@ namespace rby1_ros2{
         state_topic_name = "joint_states";
         joint_position_topic_name = "robot_joint";
         cartesian_position_topic_name = "robot_cartesian";
-
+ 
         this->get_parameter("power_on", robot_parameter_.power_on_list);
         this->get_parameter("servo_on", robot_parameter_.servo_on_list);
         this->get_parameter("get_state_period", robot_parameter_.get_state_period);
@@ -189,6 +192,9 @@ namespace rby1_ros2{
         this->get_parameter("acceleration_limit", robot_parameter_.acceleration_limit);
         this->get_parameter("stop_orientation_tracking_error", robot_parameter_.stop_orientation_tracking_error);
         this->get_parameter("stop_position_tracking_error", robot_parameter_.stop_position_tracking_error);
+        this->get_parameter("se2_minimum_time", robot_parameter_.se2_minimum_time);
+        this->get_parameter("se2_linear_acceleration_limit", robot_parameter_.se2_linear_acceleration_limit);
+        this->get_parameter("se2_angular_acceleration_limit", robot_parameter_.se2_angular_acceleration_limit);
         this->get_parameter("fault_reset_trigger", fault_reset_trigger);
         this->get_parameter("node_power_off_trigger", node_power_off_trigger_);
         this->get_parameter("collision_threshold", collision_threshold_);
@@ -1941,8 +1947,12 @@ namespace rby1_ros2{
 
             rb::SE2VelocityCommandBuilder se2_cmd;
             se2_cmd.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(0.5));
-            se2_cmd.SetMinimumTime(0.2);
+            se2_cmd.SetMinimumTime(robot_parameter_.se2_minimum_time);
             se2_cmd.SetVelocity(linear_vel, angular_vel);
+            se2_cmd.SetAccelerationLimit(
+                Eigen::Vector2d(robot_parameter_.se2_linear_acceleration_limit, robot_parameter_.se2_linear_acceleration_limit),
+                robot_parameter_.se2_angular_acceleration_limit
+            );
 
             rb::MobilityCommandBuilder mobility_cmd;
             mobility_cmd.SetCommand(se2_cmd);

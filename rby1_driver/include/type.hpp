@@ -37,5 +37,8 @@ namespace rby1_ros2{
         double acceleration_limit;
         double stop_orientation_tracking_error;
         double stop_position_tracking_error;
+        double se2_minimum_time;
+        double se2_linear_acceleration_limit;
+        double se2_angular_acceleration_limit;
     };
 }
