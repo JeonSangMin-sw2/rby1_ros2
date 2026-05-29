@@ -76,6 +76,9 @@ namespace rby1_ros2{
             bool gravity_compensation_torso_{false};
             bool gravity_compensation_right_arm_{false};
             bool gravity_compensation_left_arm_{false};
+            std::unique_ptr<rb::RobotCommandHandler<ModelType>> gravity_compensation_torso_handler_;
+            std::unique_ptr<rb::RobotCommandHandler<ModelType>> gravity_compensation_right_arm_handler_;
+            std::unique_ptr<rb::RobotCommandHandler<ModelType>> gravity_compensation_left_arm_handler_;
 
             //utility
             std::mutex mutex_;

@@ -38,7 +38,7 @@ class ZeroPoseExample(Node):
         self._action_client = ActionClient(self, Rby1JointCommand, 'robot_joint')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
-        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):

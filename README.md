@@ -189,7 +189,7 @@ ros2 run rby1_examples <example_name>
 
 ## 4. Control Manager States
 
-The `RobotState.control_manager_state` field (and the `joint_states/robot_state` topic) uses the following integer constants, also accessible as `RobotState.STATE_*`:
+The `RobotState.control_manager_state` field (and the `robot_state` topic) uses the following integer constants, also accessible as `RobotState.STATE_*`:
 
 | Value | Constant | Description |
 |-------|----------|-------------|
@@ -212,10 +212,10 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 | `joint_states/right_arm` | `sensor_msgs/JointState` | ✅ | Right arm joint state |
 | `joint_states/left_arm` | `sensor_msgs/JointState` | ✅ | Left arm joint state |
 | `joint_states/head` | `sensor_msgs/JointState` | ✅ | Head joint state |
-| `joint_states/robot_state` | `rby1_msgs/RobotState` | ✅ | Control Manager state, brakes, EMO, CoM, tool flange connection |
-| `joint_states/battery_state` | `sensor_msgs/BatteryState` | ⚙️ `publish_battery_state` | Battery voltage, current, percentage |
-| `joint_states/tool_flange/left` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Left flange: FT sensor, IMU, switch, voltage, digital I/O |
-| `joint_states/tool_flange/right` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Right flange: FT sensor, IMU, switch, voltage, digital I/O |
+| `robot_state` | `rby1_msgs/RobotState` | ✅ | Control Manager state, brakes, EMO, CoM, tool flange connection |
+| `battery_state` | `sensor_msgs/BatteryState` | ⚙️ `publish_battery_state` | Battery voltage, current, percentage |
+| `tool_flange/left` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Left flange: FT sensor, IMU, switch, voltage, digital I/O |
+| `tool_flange/right` | `rby1_msgs/ToolFlangeState` | ⚙️ `publish_tool_flange_state` | Right flange: FT sensor, IMU, switch, voltage, digital I/O |
 | `odom` | `nav_msgs/Odometry` | ✅ | High-rate robot odometry and TF broadcast relative to node namespace |
 
 ### 5-2. Topics (Subscribers)
@@ -260,7 +260,7 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 |---------------|------|-------------|
 | `robot_joint` | `rby1_msgs/Rby1JointCommand` | Whole-body joint position command. Each body part (torso, right_arm, left_arm, head) can be commanded independently in a single goal. |
 | `robot_cartesian` | `rby1_msgs/Rby1CartesianCommand` | Whole-body Cartesian command. Each arm and torso can be assigned an SE3 target pose (4×4 matrix → 16-element `float64[]` array). |
-| `joint_states/stream_position_command` | `rby1_msgs/StreamPosition` | Streams a full `JointTrajectory` (multi-waypoint) to the robot. |
+| `stream_position_command` | `rby1_msgs/StreamPosition` | Streams a full `JointTrajectory` (multi-waypoint) to the robot. |
 
 > [!IMPORTANT]
 > The action server names (`robot_joint`, `robot_cartesian`) are configured via `joint_position_topic_name` and `cartesian_position_topic_name` in `driver_parameters.yaml`.

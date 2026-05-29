@@ -40,7 +40,7 @@ class PowerControlExample(Node):
         super().__init__('power_control_example')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
-        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'robot_state', self.state_callback, 10)
         self.control_state = None
 
         while not self.power_client.wait_for_service(timeout_sec=1.0):

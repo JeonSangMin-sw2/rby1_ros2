@@ -74,14 +74,14 @@ namespace rby1_ros2{
                 head_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(state_topic_name + "/head", 10);
                 
                 // consolidated robot state publisher
-                robot_state_pub_ = this->create_publisher<rby1_msgs::msg::RobotState>(state_topic_name + "/robot_state", 10);
+                robot_state_pub_ = this->create_publisher<rby1_msgs::msg::RobotState>("robot_state", 10);
                 
                 if (publish_battery_state_) {
-                    battery_state_pub_ = this->create_publisher<sensor_msgs::msg::BatteryState>(state_topic_name + "/battery_state", 10);
+                    battery_state_pub_ = this->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 10);
                 }
                 if (publish_tool_flange_state_) {
-                    tool_flange_left_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>(state_topic_name + "/tool_flange/left", 10);
-                    tool_flange_right_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>(state_topic_name + "/tool_flange/right", 10);
+                    tool_flange_left_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>("tool_flange/left", 10);
+                    tool_flange_right_pub_ = this->create_publisher<rby1_msgs::msg::ToolFlangeState>("tool_flange/right", 10);
                 }
                 // loop for reading joint state
                 // loop for reading joint state
@@ -107,17 +107,17 @@ namespace rby1_ros2{
                 
                 stream_control_service_ = this->create_service<rby1_msgs::srv::StateOnOff>(
                     "stream_control", std::bind(&RBY1_ROS2_DRIVER<ModelType>::stream_control_callback, this, _1, _2));
-
+ 
                 odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
                 tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
                 cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
                     "cmd_vel", 10, std::bind(&RBY1_ROS2_DRIVER<ModelType>::cmd_vel_callback, this, _1));
-
+ 
                 /* we need to add tool flange on/off service*/
-
+ 
                 stream_position_action_server_ = rclcpp_action::create_server<StreamPosition>(
                     this,
-                    state_topic_name + "/stream_position_command",
+                    "stream_position_command",
                     std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_stream_goal, this, _1, _2),
                     std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_stream_cancel, this, _1),
                     std::bind(&RBY1_ROS2_DRIVER<ModelType>::handle_stream_accepted, this, _1));
@@ -252,6 +252,17 @@ namespace rby1_ros2{
                 return;
             }
         } else {
+            // Check control manager state and disable it if enabled before powering off
+            const auto& cm_state = robot_->GetControlManagerState();
+            if (cm_state.state == rb::ControlManagerState::State::kEnabled) {
+                RCLCPP_INFO(this->get_logger(), "Control Manager is enabled. Disabling Control Manager first before powering off...");
+                if (!robot_->DisableControlManager()) {
+                    RCLCPP_WARN(this->get_logger(), "Failed to disable Control Manager, proceeding with power off anyway.");
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "Control Manager successfully disabled.");
+                }
+            }
+
             RCLCPP_INFO(this->get_logger(), "Power OFF [%s]...", power_list_str.c_str());
             if (!robot_->PowerOff(power_list_str)) {
                 response->success = false;
@@ -451,7 +462,24 @@ namespace rby1_ros2{
         component_cmd_builder.SetBodyCommand(rb::BodyCommandBuilder(body_comp));
 
         try {
-            auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
+            if (request->state) {
+                auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
+                if (request->part_name == "torso") {
+                    gravity_compensation_torso_handler_ = std::move(cmd_handler);
+                } else if (request->part_name == "right_arm") {
+                    gravity_compensation_right_arm_handler_ = std::move(cmd_handler);
+                } else if (request->part_name == "left_arm") {
+                    gravity_compensation_left_arm_handler_ = std::move(cmd_handler);
+                }
+            } else {
+                if (request->part_name == "torso") {
+                    gravity_compensation_torso_handler_.reset();
+                } else if (request->part_name == "right_arm") {
+                    gravity_compensation_right_arm_handler_.reset();
+                } else if (request->part_name == "left_arm") {
+                    gravity_compensation_left_arm_handler_.reset();
+                }
+            }
             response->response = true;
             RCLCPP_INFO(this->get_logger(), "GravityCompensation: Successfully set %s gravity compensation to %s",
                 request->part_name.c_str(), request->state ? "ON" : "OFF");
@@ -898,27 +926,29 @@ namespace rby1_ros2{
                 }
                 if (pt_time <= 0.0) pt_time = 0.01;
 
+                double cmd_min_time = pt_time * 1.1;
+
                 // Build Component-based commands for each part to ensure full-body synchronization
                 // Build Component-based commands for each part using CORRECT indices
                 Eigen::VectorXd torso_q(6);
                 for (int i = 0; i < 6; ++i) torso_q[i] = q[info_.torso_joint_idx[i]];
                 rb::TorsoCommandBuilder torso_builder;
-                torso_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(torso_q).SetMinimumTime(pt_time));
+                torso_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(torso_q).SetMinimumTime(cmd_min_time));
 
                 Eigen::VectorXd right_arm_q(7);
                 for (int i = 0; i < 7; ++i) right_arm_q[i] = q[info_.right_arm_joint_idx[i]];
                 rb::ArmCommandBuilder right_arm_builder;
-                right_arm_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(right_arm_q).SetMinimumTime(pt_time));
+                right_arm_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(right_arm_q).SetMinimumTime(cmd_min_time));
 
                 Eigen::VectorXd left_arm_q(7);
                 for (int i = 0; i < 7; ++i) left_arm_q[i] = q[info_.left_arm_joint_idx[i]];
                 rb::ArmCommandBuilder left_arm_builder;
-                left_arm_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(left_arm_q).SetMinimumTime(pt_time));
+                left_arm_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(left_arm_q).SetMinimumTime(cmd_min_time));
 
                 Eigen::VectorXd head_q(2);
                 for (int i = 0; i < 2; ++i) head_q[i] = q[info_.head_joint_idx[i]];
                 rb::HeadCommandBuilder head_builder;
-                head_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(head_q).SetMinimumTime(pt_time));
+                head_builder.SetCommand(rb::JointPositionCommandBuilder().SetPosition(head_q).SetMinimumTime(cmd_min_time));
 
                 rb::BodyComponentBasedCommandBuilder body_comp_builder;
                 body_comp_builder.SetTorsoCommand(torso_builder);
@@ -1894,7 +1924,7 @@ namespace rby1_ros2{
 
             rb::SE2VelocityCommandBuilder se2_cmd;
             se2_cmd.SetCommandHeader(rb::CommandHeaderBuilder().SetControlHoldTime(0.5));
-            se2_cmd.SetMinimumTime(0.1);
+            se2_cmd.SetMinimumTime(0.2);
             se2_cmd.SetVelocity(linear_vel, angular_vel);
 
             rb::MobilityCommandBuilder mobility_cmd;

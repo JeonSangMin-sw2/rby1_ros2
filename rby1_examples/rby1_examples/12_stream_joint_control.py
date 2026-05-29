@@ -26,13 +26,13 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 class StreamJointControl(Node):
     def __init__(self):
         super().__init__('stream_joint_control')
-        self._stream_client = ActionClient(self, StreamPosition, 'joint_states/stream_position_command')
+        self._stream_client = ActionClient(self, StreamPosition, 'stream_position_command')
         self._zero_pose_client = ActionClient(self, Rby1JointCommand, 'robot_joint')
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
         self.stream_control_client = self.create_client(StateOnOff, 'stream_control')
         
-        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):

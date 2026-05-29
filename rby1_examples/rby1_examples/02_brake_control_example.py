@@ -60,7 +60,7 @@ class BrakeControlExample(Node):
 
         # Unified robot state subscription
         self.state_sub = self.create_subscription(
-            RobotState, 'joint_states/robot_state',
+            RobotState, 'robot_state',
             self.robot_state_callback, 10)
 
         self.control_manager_state = None
@@ -185,12 +185,12 @@ class BrakeControlExample(Node):
         cur = self._state_name(self.control_manager_state)
         self.get_logger().info(f'Current Control Manager State: {cur}')
 
-        # 2. Handle FAULT states: reset → enable first
+        # 2. Handle FAULT states: reset to get to IDLE
         if self.control_manager_state in [
             RobotState.STATE_MAJOR_FAULT, RobotState.STATE_MINOR_FAULT
         ]:
             self.get_logger().warn(
-                f'Robot is in {cur} state. Attempting fault reset before proceeding...')
+                f'Robot is in {cur} state. Attempting fault reset to transition to IDLE...')
             if not self.send_control_manager_cmd(
                     ControlManagerCommand.Request.CMD_RESET):
                 self.get_logger().error('Fault reset failed. Aborting.')
@@ -202,30 +202,16 @@ class BrakeControlExample(Node):
                     f'State did not become IDLE after reset. '
                     f'Current: {self._state_name(self.control_manager_state)}')
                 return
+            self.get_logger().info('Fault cleared. Robot is now in IDLE state.')
 
-            self.get_logger().info('Fault cleared. Re-enabling Control Manager...')
-            if not self.send_control_manager_cmd(
-                    ControlManagerCommand.Request.CMD_ENABLE):
-                self.get_logger().error('Could not re-enable after reset. Aborting.')
-                return
-
-            if not self._wait_for_state(RobotState.STATE_ENABLE, timeout=5.0):
-                self.get_logger().error(
-                    f'State did not become ENABLE after re-enable. '
-                    f'Current: {self._state_name(self.control_manager_state)}')
-                return
-
-            self.get_logger().info('Control Manager re-enabled after fault recovery.')
-
-        # 3. If ENABLE or EXECUTING → transition to IDLE (Disable)
-        if self.control_manager_state in [
-            RobotState.STATE_ENABLE, RobotState.STATE_EXECUTING
-        ]:
+        # 3. If in ENABLE, EXECUTING, or any non-IDLE state → send CMD_DISABLE to transition to IDLE
+        if self.control_manager_state != RobotState.STATE_IDLE:
             self.get_logger().info(
-                'Robot is active. Transitioning Control Manager to IDLE (DISABLE)...')
+                f'Current state is {self._state_name(self.control_manager_state)}. '
+                f'Sending CMD_DISABLE to transition Control Manager to IDLE...')
             if not self.send_control_manager_cmd(
                     ControlManagerCommand.Request.CMD_DISABLE):
-                self.get_logger().error('Could not disable Control Manager. Aborting.')
+                self.get_logger().error('Could not send CMD_DISABLE command. Aborting.')
                 return
 
             if not self._wait_for_state(RobotState.STATE_IDLE, timeout=5.0):
@@ -234,9 +220,7 @@ class BrakeControlExample(Node):
                     f'Current: {self._state_name(self.control_manager_state)}')
                 return
 
-            self.get_logger().info(
-                f'Control Manager is now IDLE. '
-                f'Current state: {self._state_name(self.control_manager_state)}')
+            self.get_logger().info('Control Manager successfully transitioned to IDLE.')
 
         # 4. Verify IDLE state before brake operations
         if self.control_manager_state != RobotState.STATE_IDLE:

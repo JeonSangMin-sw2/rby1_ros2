@@ -46,7 +46,7 @@ class CancelControlExample(Node):
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
         self.cancel_control_client = self.create_client(Trigger, 'cancel_control')
-        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):

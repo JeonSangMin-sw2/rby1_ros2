@@ -36,7 +36,7 @@ class GravityCompensationExample(Node):
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
         self.gravity_client = self.create_client(GravityCompensation, 'gravity_compensation')
-        self.state_sub = self.create_subscription(RobotState, 'joint_states/robot_state', self.state_callback, 10)
+        self.state_sub = self.create_subscription(RobotState, 'robot_state', self.state_callback, 10)
         self.control_state = None
 
     def state_callback(self, msg):
