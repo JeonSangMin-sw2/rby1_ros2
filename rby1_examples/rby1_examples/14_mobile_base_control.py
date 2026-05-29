@@ -30,6 +30,7 @@ class MobileBaseControl(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.power_client = self.create_client(StateOnOff, 'robot_power')
         self.servo_client = self.create_client(StateOnOff, 'robot_servo')
+        self.stream_client = self.create_client(StateOnOff, 'stream_control')
         
         # Subscribe to flat robot_state topic
         self.state_sub = self.create_subscription(RobotState, 'robot_state', self.state_callback, 10)
@@ -49,12 +50,21 @@ class MobileBaseControl(Node):
         return False
 
     def ensure_robot_ready(self):
-        self.get_logger().info('Ensuring robot is powered on and servos are active...')
+        self.get_logger().info('Ensuring robot is powered on, servos are active, and stream is ON...')
         
         # 1. Check current state first
         rclpy.spin_once(self, timeout_sec=0.5)
         if self.control_state in [2, 3]:
-            self.get_logger().info('Robot is already enabled.')
+            self.get_logger().info('Robot is already enabled. Activating stream control...')
+            self.stream_client.wait_for_service()
+            req_stream = StateOnOff.Request()
+            req_stream.state = True
+            future = self.stream_client.call_async(req_stream)
+            rclpy.spin_until_future_complete(self, future)
+            if future.result() is None or not future.result().success:
+                self.get_logger().error(f'Failed to enable stream control: {future.result().message if future.result() else "No response"}')
+                return False
+            self.get_logger().info('Stream control is ON. Robot is ready.')
             return True
 
         # 2. Power On
@@ -82,7 +92,16 @@ class MobileBaseControl(Node):
             
         # 4. Wait for state to become 2 or 3
         if self.wait_for_state([2, 3], timeout=10.0):
-            self.get_logger().info('Robot is ready.')
+            self.get_logger().info('Robot enabled. Activating stream control...')
+            self.stream_client.wait_for_service()
+            req_stream = StateOnOff.Request()
+            req_stream.state = True
+            future = self.stream_client.call_async(req_stream)
+            rclpy.spin_until_future_complete(self, future)
+            if future.result() is None or not future.result().success:
+                self.get_logger().error(f'Failed to enable stream control: {future.result().message if future.result() else "No response"}')
+                return False
+            self.get_logger().info('Stream control is ON. Robot is ready.')
             time.sleep(1.0) # One more second for control manager to settle
             return True
         else:
@@ -100,89 +119,107 @@ def main(args=None):
     rclpy.init(args=args)
     controller = MobileBaseControl()
 
-    # Ensure Robot is Power ON and Servo ON
+    # Ensure Robot is Power ON, Servo ON, and Stream ON
     if not controller.ensure_robot_ready():
         controller.get_logger().error('Failed to prepare robot. Exiting.')
+        controller.destroy_node()
+        rclpy.shutdown()
         return
 
-    # Phase 1: Drive Forward
-    controller.get_logger().info('Driving forward at 0.15 m/s for 2.0 seconds...')
-    start_time = time.time()
-    while time.time() - start_time < 2.0 and rclpy.ok():
-        controller.send_velocity(0.15, 0.0, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
+    try:
+        # Phase 1: Drive Forward
+        controller.get_logger().info('Driving forward at 0.15 m/s for 2.0 seconds...')
+        start_time = time.time()
+        while time.time() - start_time < 2.0 and rclpy.ok():
+            controller.send_velocity(0.15, 0.0, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
 
-    # Stop
-    controller.get_logger().info('Stopping base for 1.0 second...')
-    start_time = time.time()
-    while time.time() - start_time < 1.0 and rclpy.ok():
+        # Stop
+        controller.get_logger().info('Stopping base for 1.0 second...')
+        start_time = time.time()
+        while time.time() - start_time < 1.0 and rclpy.ok():
+            controller.send_velocity(0.0, 0.0, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Phase 2: Drive Backward
+        controller.get_logger().info('Driving backward at -0.15 m/s for 2.0 seconds...')
+        start_time = time.time()
+        while time.time() - start_time < 2.0 and rclpy.ok():
+            controller.send_velocity(-0.15, 0.0, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Stop
+        controller.get_logger().info('Stopping base for 1.0 second...')
+        start_time = time.time()
+        while time.time() - start_time < 1.0 and rclpy.ok():
+            controller.send_velocity(0.0, 0.0, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Phase 3: Rotate
+        controller.get_logger().info('Rotating base at 0.25 rad/s for 2.0 seconds...')
+        start_time = time.time()
+        while time.time() - start_time < 2.0 and rclpy.ok():
+            controller.send_velocity(0.0, 0.0, 0.25)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Stop
+        controller.get_logger().info('Stopping base for 1.0 second...')
+        start_time = time.time()
+        while time.time() - start_time < 1.0 and rclpy.ok():
+            controller.send_velocity(0.0, 0.0, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Phase 4: Drive Left (lateral translation)
+        controller.get_logger().info('Driving left at 0.15 m/s for 2.0 seconds (mecanum base only)...')
+        start_time = time.time()
+        while time.time() - start_time < 2.0 and rclpy.ok():
+            controller.send_velocity(0.0, 0.15, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Stop
+        controller.get_logger().info('Stopping base for 1.0 second...')
+        start_time = time.time()
+        while time.time() - start_time < 1.0 and rclpy.ok():
+            controller.send_velocity(0.0, 0.0, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Phase 5: Drive Right (lateral translation)
+        controller.get_logger().info('Driving right at -0.15 m/s for 2.0 seconds (mecanum base only)...')
+        start_time = time.time()
+        while time.time() - start_time < 2.0 and rclpy.ok():
+            controller.send_velocity(0.0, -0.15, 0.0)
+            rclpy.spin_once(controller, timeout_sec=0.01)
+            time.sleep(0.04)
+
+        # Final Stop
+        controller.get_logger().info('Stopping base movement.')
         controller.send_velocity(0.0, 0.0, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Phase 2: Drive Backward
-    controller.get_logger().info('Driving backward at -0.15 m/s for 2.0 seconds...')
-    start_time = time.time()
-    while time.time() - start_time < 2.0 and rclpy.ok():
-        controller.send_velocity(-0.15, 0.0, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Stop
-    controller.get_logger().info('Stopping base for 1.0 second...')
-    start_time = time.time()
-    while time.time() - start_time < 1.0 and rclpy.ok():
-        controller.send_velocity(0.0, 0.0, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Phase 3: Rotate
-    controller.get_logger().info('Rotating base at 0.25 rad/s for 2.0 seconds...')
-    start_time = time.time()
-    while time.time() - start_time < 2.0 and rclpy.ok():
-        controller.send_velocity(0.0, 0.0, 0.25)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Stop
-    controller.get_logger().info('Stopping base for 1.0 second...')
-    start_time = time.time()
-    while time.time() - start_time < 1.0 and rclpy.ok():
-        controller.send_velocity(0.0, 0.0, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Phase 4: Drive Left (lateral translation)
-    controller.get_logger().info('Driving left at 0.15 m/s for 2.0 seconds (mecanum base only)...')
-    start_time = time.time()
-    while time.time() - start_time < 2.0 and rclpy.ok():
-        controller.send_velocity(0.0, 0.15, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Stop
-    controller.get_logger().info('Stopping base for 1.0 second...')
-    start_time = time.time()
-    while time.time() - start_time < 1.0 and rclpy.ok():
-        controller.send_velocity(0.0, 0.0, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Phase 5: Drive Right (lateral translation)
-    controller.get_logger().info('Driving right at -0.15 m/s for 2.0 seconds (mecanum base only)...')
-    start_time = time.time()
-    while time.time() - start_time < 2.0 and rclpy.ok():
-        controller.send_velocity(0.0, -0.15, 0.0)
-        rclpy.spin_once(controller, timeout_sec=0.01)
-        time.sleep(0.04)
-
-    # Final Stop
-    controller.get_logger().info('Stopping and exiting.')
-    controller.send_velocity(0.0, 0.0, 0.0)
-
-    controller.destroy_node()
-    rclpy.shutdown()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Turn stream OFF on exit
+        try:
+            if rclpy.ok():
+                controller.get_logger().info('Deactivating stream control on exit...')
+                req = StateOnOff.Request()
+                req.state = False
+                controller.stream_client.wait_for_service()
+                future = controller.stream_client.call_async(req)
+                rclpy.spin_until_future_complete(controller, future)
+        except Exception as e:
+            controller.get_logger().error(f"Error turning off stream control: {e}")
+            
+        controller.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

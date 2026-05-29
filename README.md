@@ -225,6 +225,12 @@ The `RobotState.control_manager_state` field (and the `robot_state` topic) uses 
 | `cmd_vel` | `geometry_msgs/Twist` | Velocity command for driving base wheels (linear x, y and angular z) |
 
 > [!IMPORTANT]
+> **Mobile Base Control (`cmd_vel`) streaming requirement:**
+> Since `cmd_vel` acts as a high-frequency publisher, **you must enable persistent stream control** before publishing base velocity commands.
+> - Call `/stream_control` with `state: true` before sending `cmd_vel` commands.
+> - Call `/stream_control` with `state: false` after finishing base control to return to regular position hold.
+> - Attempting to activate `/stream_control` when already active is idempotent; the service will safely log a warning and return success.
+>
 > ⚙️ = controlled by the corresponding flag in `driver_parameters.yaml`
 
 ---

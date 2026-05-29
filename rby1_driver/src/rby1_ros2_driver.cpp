@@ -1965,6 +1965,12 @@ namespace rby1_ros2{
         std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (request->state) {
+            if (stream_active_ && stream_handler_) {
+                response->success = true;
+                response->message = "Persistent stream control is already active.";
+                RCLCPP_INFO(this->get_logger(), "Persistent stream control is already active. Ignoring request.");
+                return;
+            }
             try {
                 // When stream is ON, create command stream
                 stream_handler_ = robot_->CreateCommandStream();
