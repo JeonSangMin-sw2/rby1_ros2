@@ -434,11 +434,21 @@ namespace rby1_ros2{
 
         // 1. Collision check: Robot must NOT be moving (executing/switching)
         const auto& cm_state = robot_->GetControlManagerState();
-        if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
-            cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
-            response->response = false;
-            RCLCPP_WARN(this->get_logger(), "GravityCompensation: Robot is active in execution/switching state. Rejecting request.");
-            return;
+        bool is_any_gravity_compensation_active = 
+            gravity_compensation_torso_ || 
+            gravity_compensation_right_arm_ || 
+            gravity_compensation_left_arm_;
+
+        // We only enforce the active execution check if:
+        // - We are enabling gravity compensation (request->state == true)
+        // - AND gravity compensation is not already active on any body part.
+        if (request->state && !is_any_gravity_compensation_active) {
+            if (cm_state.control_state == rb::ControlManagerState::ControlState::kExecuting ||
+                cm_state.control_state == rb::ControlManagerState::ControlState::kSwitching) {
+                response->response = false;
+                RCLCPP_WARN(this->get_logger(), "GravityCompensation: Robot is active in execution/switching state. Rejecting request.");
+                return;
+            }
         }
 
         // 2. Build and Send Gravity Compensation command
@@ -472,12 +482,19 @@ namespace rby1_ros2{
                     gravity_compensation_left_arm_handler_ = std::move(cmd_handler);
                 }
             } else {
+                // 1. Reset/cancel the original ON command handler first
                 if (request->part_name == "torso") {
                     gravity_compensation_torso_handler_.reset();
                 } else if (request->part_name == "right_arm") {
                     gravity_compensation_right_arm_handler_.reset();
                 } else if (request->part_name == "left_arm") {
                     gravity_compensation_left_arm_handler_.reset();
+                }
+
+                // 2. Send explicit command to turn gravity compensation OFF and wait for completion
+                auto cmd_handler = robot_->SendCommand(rb::RobotCommandBuilder().SetCommand(component_cmd_builder));
+                if (cmd_handler) {
+                    cmd_handler->WaitFor(1000); // Wait up to 1 second for transition to complete
                 }
             }
             response->response = true;

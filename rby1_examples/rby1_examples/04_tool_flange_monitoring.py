@@ -52,7 +52,7 @@ class ToolFlangeMonitoring(Node):
         self.send_tool_flange_request(True, '12')
 
         # Timer for 10 Hz dynamic console updates
-        self.timer = self.create_wall_timer(0.1, self.render_dashboard)
+        self.timer = self.create_timer(0.1, self.render_dashboard)
 
     def verify_topic_active(self, topic_name, timeout=1.5):
         start_time = time.time()
@@ -139,22 +139,24 @@ class ToolFlangeMonitoring(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    monitor = ToolFlangeMonitoring()
-    
+    monitor = None
     try:
+        monitor = ToolFlangeMonitoring()
         rclpy.spin(monitor)
     except KeyboardInterrupt:
         pass
     finally:
-        # Clear screen and turn off power before shutdown
         print("\033[H\033[J", end="", flush=True)
-        try:
-            print('Shutting down: turning off tool flange power...')
-            monitor.send_tool_flange_request(False, '')
-        except Exception as e:
-            print(f"Error during shutdown tool flange power off: {e}")
-        monitor.destroy_node()
-        rclpy.shutdown()
+        if monitor is not None:
+            try:
+                if rclpy.ok():
+                    print('Shutting down: turning off tool flange power...')
+                    monitor.send_tool_flange_request(False, '')
+            except Exception as e:
+                print(f"Error during shutdown tool flange power off: {e}")
+            monitor.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

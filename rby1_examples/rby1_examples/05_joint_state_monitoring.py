@@ -40,7 +40,7 @@ class JointStateMonitoring(Node):
             JointState, 'joint_states/head', lambda msg: self.joint_state_callback(msg, 'head'), 10)
 
         # Timer for 10 Hz dynamic console updates
-        self.timer = self.create_wall_timer(0.1, self.render_dashboard)
+        self.timer = self.create_timer(0.1, self.render_dashboard)
 
     def joint_state_callback(self, msg, part_name):
         if part_name == 'torso':

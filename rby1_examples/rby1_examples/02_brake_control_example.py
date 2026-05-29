@@ -55,6 +55,8 @@ class BrakeControlExample(Node):
         # Service clients
         self.control_manager_client = self.create_client(
             ControlManagerCommand, 'control_manager_command')
+        self.power_client = self.create_client(
+            StateOnOff, 'robot_power')
         self.brake_client = self.create_client(
             StateOnOff, 'set_motor_brake')
 
@@ -105,6 +107,7 @@ class BrakeControlExample(Node):
         """필요한 서비스가 모두 준비될 때까지 대기합니다."""
         for client, name in [
             (self.control_manager_client, 'control_manager_command'),
+            (self.power_client, 'robot_power'),
             (self.brake_client, 'set_motor_brake'),
         ]:
             self.get_logger().info(f"Waiting for service '{name}'...")
@@ -185,6 +188,28 @@ class BrakeControlExample(Node):
         cur = self._state_name(self.control_manager_state)
         self.get_logger().info(f'Current Control Manager State: {cur}')
 
+        # Check if 48V power is ON
+        self.get_logger().info('Checking 48V power status...')
+        req = StateOnOff.Request()
+        req.state = True
+        req.parameters = '48'
+        future = self.power_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        res = future.result()
+        if res is None:
+            self.get_logger().error('No response from robot_power service. Aborting.')
+            return
+            
+        if not res.success:
+            self.get_logger().error(f'Failed to check/enable 48V power: {res.message}')
+            return
+
+        if 'already ON' not in res.message:
+            self.get_logger().info('48V power was OFF. Successfully enabled 48V power. Exiting program.')
+            return
+
+        self.get_logger().info('48V power is already ON. Proceeding with brake control test...')
+
         # 2. Handle FAULT states: reset to get to IDLE
         if self.control_manager_state in [
             RobotState.STATE_MAJOR_FAULT, RobotState.STATE_MINOR_FAULT
@@ -257,19 +282,7 @@ class BrakeControlExample(Node):
         self.get_logger().info('=' * 52)
         self.get_logger().info('Brake test finished. Re-enabling Control Manager...')
         self.get_logger().info('=' * 52)
-
-        # 8. Re-enable Control Manager
-        if self.send_control_manager_cmd(ControlManagerCommand.Request.CMD_ENABLE):
-            if self._wait_for_state(RobotState.STATE_ENABLE, timeout=5.0):
-                self.get_logger().info(
-                    f'Control Manager re-enabled. '
-                    f'Final state: {self._state_name(self.control_manager_state)}')
-            else:
-                self.get_logger().warn(
-                    f'Re-enable sent but state is still: '
-                    f'{self._state_name(self.control_manager_state)}')
-        else:
-            self.get_logger().error('Failed to re-enable Control Manager.')
+        
 
 
 def main(args=None):

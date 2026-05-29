@@ -43,7 +43,7 @@ class RobotStatusMonitor(Node):
             ToolFlangeState, 'tool_flange/right', lambda msg: self.tf_callback(msg, 'Right'), 10)
 
         # Timer for 10 Hz dynamic console updates
-        self.timer = self.create_wall_timer(0.1, self.render_dashboard)
+        self.timer = self.create_timer(0.1, self.render_dashboard)
 
         # Verify robot state topic is active
         if not self.verify_topic_active('robot_state', timeout=1.5):
@@ -101,7 +101,8 @@ class RobotStatusMonitor(Node):
                 state_color = "\033[1;33m"  # Yellow
                 
             print(f"Control Manager State: {state_color}{state_str}\033[0m")
-            print(f"EMO Pressed:           {'\033[1;31mYES\033[0m' if msg.emo_state else '\033[1;32mNO\033[0m'}")
+            emo_str = '\033[1;31mYES\033[0m' if msg.emo_state else '\033[1;32mNO\033[0m'
+            print(f"EMO Pressed:           {emo_str}")
             print(f"Center of Mass [X,Y,Z]: {[round(x, 4) for x in msg.center_of_mass]} m")
             
             # Brakes
@@ -109,7 +110,13 @@ class RobotStatusMonitor(Node):
             print("Brakes Status (\033[1;31mENGAGED\033[0m / \033[1;32mRELEASED\033[0m):")
             
             def format_brakes(brakes):
-                return ", ".join([f"\033[1;31mENG\033[0m" if b else f"\033[1;32mREL\033[0m" for b in brakes])
+                res = []
+                for b in brakes:
+                    if b:
+                        res.append("\033[1;31mENG\033[0m")
+                    else:
+                        res.append("\033[1;32mREL\033[0m")
+                return ", ".join(res)
                 
             print(f"  Torso:     [{format_brakes(msg.brake_state.torso)}]")
             print(f"  Right Arm: [{format_brakes(msg.brake_state.right_arm)}]")
