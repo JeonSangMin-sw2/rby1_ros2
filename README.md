@@ -58,7 +58,8 @@ Located at `rby1_driver/config/driver_parameters.yaml`.
 Edit this file to match your robot before launching the driver.  
 Because the workspace was built with `--symlink-install`, **no rebuild is needed** after editing.
 
-> **Note**: For simulation testing, keep `robot_ip: "127.0.0.1:50051"`.  
+> [!NOTE]
+> For simulation testing, keep `robot_ip: "127.0.0.1:50051"`.  
 > Some state values (battery, tool flange FT/IMU) will show zeros in simulation because no physical sensors are attached.
 
 | Parameter | Default | Description |
@@ -97,7 +98,8 @@ sudo docker run --rm \
   rainbowroboticsofficial/rby1-sim:0.10.6-a_v1.2
 ```
 
-> Model `a` only supports firmware up to v1.2. Model `m` supports v1.0–v1.3.
+> [!IMPORTANT]
+> ## Model `a` only supports firmware up to v1.2. Model `m` supports v1.0–v1.3.
 
 ---
 
@@ -223,6 +225,7 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 |-------|------|-------------|
 | `cmd_vel` | `geometry_msgs/Twist` | Velocity command for driving base wheels (linear x, y and angular z) |
 
+> [!IMPORTANT]
 > ⚙️ = controlled by the corresponding flag in `driver_parameters.yaml`
 
 ---
@@ -260,6 +263,7 @@ The `RobotState.control_manager_state` field (and the `joint_states/robot_state`
 | `robot_cartesian` | `rby1_msgs/Rby1CartesianCommand` | Whole-body Cartesian command. Each arm and torso can be assigned an SE3 target pose (4×4 matrix → 16-element `float64[]` array). |
 | `joint_states/stream_position_command` | `rby1_msgs/StreamPosition` | Streams a full `JointTrajectory` (multi-waypoint) to the robot. |
 
+> [!IMPORTANT]
 > The action server names (`robot_joint`, `robot_cartesian`) are configured via `joint_position_topic_name` and `cartesian_position_topic_name` in `driver_parameters.yaml`.
 
 ---
