@@ -132,7 +132,6 @@ ros2 run rby1_examples <example_name>
 | `04_tool_flange_monitoring` | `ros2 run rby1_examples 04_tool_flange_monitoring` | Continuously prints tool flange FT/IMU/IO data |
 | `05_joint_state_monitoring` | `ros2 run rby1_examples 05_joint_state_monitoring` | Prints per-component joint positions in real time |
 | `06_brake_control` | `ros2 run rby1_examples 06_brake_control` | Releases and re-engages arm brakes via IDLE state |
-| `07_tool_flange_test` | `ros2 run rby1_examples 07_tool_flange_test` | Power-cycles the tool flange and reads sensor state |
 | `08_joint_command` | `ros2 run rby1_examples 08_joint_command` | Sends Ready Pose → Zero Pose via joint position action |
 | `09_cartesian_command` | `ros2 run rby1_examples 09_cartesian_command` | Moves the right arm to a target Cartesian pose |
 | `10_multi_controls` | `ros2 run rby1_examples 10_multi_controls` | Simultaneous joint + Cartesian control per body part |
