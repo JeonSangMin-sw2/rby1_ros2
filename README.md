@@ -93,7 +93,27 @@ source /opt/ros/humble/setup.bash
 source ~/.bashrc
 ```
 
-### 1-5. Build
+### 1-6. Real-time (RT) Priority Setup (Required for 100Hz Real-Time Control)
+
+To enable real-time scheduling (`SCHED_FIFO`) and eliminate gRPC/ROS 2 thread latency under high CPU loads, configure real-time priority limits for your user account (e.g. `nvidia`):
+
+```bash
+# 1. Create a realtime limit configuration file (example for user 'nvidia'):
+sudo bash -c 'cat << EOF > /etc/security/limits.d/99-realtime.conf
+nvidia - rtprio 99
+nvidia - memlock unlimited
+EOF'
+
+# Note: Replace 'nvidia' with your actual username (e.g. $USER) if different.
+
+# 2. Apply settings by opening a new terminal session or logging out and back in.
+
+# 3. Verify that real-time priority is enabled:
+ulimit -r
+# Expected output: 99
+```
+
+### 1-7. Build
 
 ```bash
 mkdir -p rby1_ros2_ws/src
@@ -104,7 +124,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 1-6. Configure `driver_parameters.yaml`
+### 1-8. Configure `driver_parameters.yaml`
 
 Located at `rby1_driver/config/driver_parameters.yaml`.  
 Edit this file to match your robot before launching the driver.  
@@ -133,7 +153,7 @@ Because the workspace was built with `--symlink-install`, **no rebuild is needed
 
 ![get_state_period_1](Doc/img/topic_hz.png)
 
-### 1-7. Run Simulator (optional)
+### 1-9. Run Simulator (optional)
 
 If you do not have a physical robot, run the Docker simulator.  
 The robot IP in this case is `"127.0.0.1:50051"` or `"localhost:50051"`.  
@@ -153,7 +173,7 @@ sudo docker run --rm \
 
 ---
 
-### 1-8. Launch the Driver
+### 1-10. Launch the Driver
 
 ```bash
 # In your workspace root

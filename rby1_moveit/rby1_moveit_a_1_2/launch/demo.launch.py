@@ -47,16 +47,23 @@ def generate_launch_description():
     # Generate the demo launch using moveit_configs_utils
     demo_launch = generate_demo_launch(moveit_config)
 
-    # Shutdown launch on critical node exit
+    # Shutdown launch on critical node exit & set real-time prefix
     from launch.actions import Shutdown
     from launch_ros.actions import Node
+    from launch.substitutions import TextSubstitution
     for entity in demo_launch.entities:
-        if isinstance(entity, Node) and entity.node_executable in ('ros2_control_node', 'move_group'):
-            entity.on_exit = Shutdown()
-            try:
-                setattr(entity, '_ExecuteLocal__on_exit', Shutdown())
-            except AttributeError:
-                pass
+        if isinstance(entity, Node):
+            if entity.node_executable == 'ros2_control_node':
+                try:
+                    setattr(entity.process_description, '_Executable__prefix', [TextSubstitution(text='chrt -f 1')])
+                except Exception:
+                    pass
+            if entity.node_executable in ('ros2_control_node', 'move_group'):
+                entity.on_exit = Shutdown()
+                try:
+                    setattr(entity, '_ExecuteLocal__on_exit', Shutdown())
+                except AttributeError:
+                    pass
     
     # rqt_controller_manager
     # rqt_controller_manager = ExecuteProcess(

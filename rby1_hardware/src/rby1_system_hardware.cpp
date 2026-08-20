@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <chrono>
 #include <thread>
+#include <pthread.h>
+#include <sched.h>
 
 namespace rby1_hardware {
 

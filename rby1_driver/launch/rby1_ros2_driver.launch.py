@@ -27,7 +27,8 @@ def generate_launch_description():
         name='rby1_ros2_driver',
         namespace=namespace,
         parameters=[parameter_file],
-    output='screen',
+        output='screen',
+        prefix=['chrt -f 1'],
     # arguments=['--ros-args', '--log-level', 'DEBUG'] # ros2 의 디버깅 모드 설정
     )
 
