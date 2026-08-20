@@ -65,20 +65,20 @@ ros2 pkg list | grep moveit
 
 <https://moveit.picknik.ai/humble/doc/tutorials/getting_started/getting_started.html>
 
-#### Install additional tool
+#### 1-5. Install additional tool
 
 ```bash
 sudo apt install ros-humble-gripper-controllers
 sudo apt install ros-humble-joint-trajectory-controller
 ```
 
-### 1-5. Install Nav2(optional)
+### 1-6. Install Nav2(optional)
 
 <https://docs.nav2.org/development_guides/build_docs/index.html#build-instructions>
 
 
 
-### 1-5. Environment Setup
+### 1-7. Environment Setup
 
 Add the following lines to `~/.bashrc`:
 
@@ -93,7 +93,7 @@ source /opt/ros/humble/setup.bash
 source ~/.bashrc
 ```
 
-### 1-6. Real-time (RT) Priority Setup (Required for 100Hz Real-Time Control)
+### 1-8. Real-time (RT) Priority Setup (Required for 100Hz Real-Time Control)
 
 To enable real-time scheduling (`SCHED_FIFO`) and eliminate gRPC/ROS 2 thread latency under high CPU loads, configure real-time priority limits for your user account (e.g. `nvidia`):
 
@@ -117,7 +117,7 @@ ulimit -r
 
 
 
-### 1-7. Build
+### 1-9. Build
 
 ```bash
 mkdir -p rby1_ros2_ws/src
@@ -128,7 +128,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 1-8. Configure `driver_parameters.yaml`
+### 1-10. Configure `driver_parameters.yaml`
 
 Located at `rby1_driver/config/driver_parameters.yaml`.  
 Edit this file to match your robot before launching the driver.  
@@ -157,7 +157,7 @@ Because the workspace was built with `--symlink-install`, **no rebuild is needed
 
 ![get_state_period_1](Doc/img/topic_hz.png)
 
-### 1-9. Run Simulator (optional)
+### 1-11. Run Simulator (optional)
 
 If you do not have a physical robot, run the Docker simulator.  
 The robot IP in this case is `"127.0.0.1:50051"` or `"localhost:50051"`.  
@@ -177,7 +177,7 @@ sudo docker run --rm \
 
 ---
 
-### 1-10. Launch the Driver
+### 1-12. Launch the Driver
 
 ```bash
 # In your workspace root
