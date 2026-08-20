@@ -112,6 +112,10 @@ EOF'
 ulimit -r
 # Expected output: 99
 ```
+> [!IMPORTANT]
+> ## Apply settings, it is necessary to reboot or log out/in.
+
+
 
 ### 1-7. Build
 
