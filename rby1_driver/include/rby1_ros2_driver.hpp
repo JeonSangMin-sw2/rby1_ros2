@@ -16,6 +16,9 @@
 #include "rby1_msgs/msg/brake_state.hpp"
 #include "rby1_msgs/msg/robot_state.hpp"
 #include "rby1_msgs/msg/tool_flange_state.hpp"
+#include "rby1_msgs/msg/tool_flange_status.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "rby1_msgs/srv/state_on_off.hpp"
@@ -101,8 +104,13 @@ namespace rby1_ros2{
             rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
             rclcpp::Publisher<rby1_msgs::msg::RobotState>::SharedPtr robot_state_pub_;
             rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state_pub_;
-            rclcpp::Publisher<rby1_msgs::msg::ToolFlangeState>::SharedPtr tool_flange_left_pub_;
-            rclcpp::Publisher<rby1_msgs::msg::ToolFlangeState>::SharedPtr tool_flange_right_pub_;
+            // Tool flange classified publishers
+            rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr tool_flange_left_imu_pub_;
+            rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr tool_flange_right_imu_pub_;
+            rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr tool_flange_left_wrench_pub_;
+            rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr tool_flange_right_wrench_pub_;
+            rclcpp::Publisher<rby1_msgs::msg::ToolFlangeStatus>::SharedPtr tool_flange_left_status_pub_;
+            rclcpp::Publisher<rby1_msgs::msg::ToolFlangeStatus>::SharedPtr tool_flange_right_status_pub_;
             rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
             std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
             rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;

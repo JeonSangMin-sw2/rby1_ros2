@@ -154,12 +154,29 @@ RBY1_ROS2_DRIVER<ModelType>::RBY1_ROS2_DRIVER() : Node("rby1_ros2_driver") {
               "battery_state", 10);
     }
     if (publish_tool_flange_state_) {
-      tool_flange_left_pub_ =
-          this->create_publisher<rby1_msgs::msg::ToolFlangeState>(
-              "tool_flange/left", 10);
-      tool_flange_right_pub_ =
-          this->create_publisher<rby1_msgs::msg::ToolFlangeState>(
-              "tool_flange/right", 10);
+      // IMU publishers
+      tool_flange_left_imu_pub_ =
+          this->create_publisher<sensor_msgs::msg::Imu>(
+              "tool_flange/left/imu", 10);
+      tool_flange_right_imu_pub_ =
+          this->create_publisher<sensor_msgs::msg::Imu>(
+              "tool_flange/right/imu", 10);
+
+      // Force/Torque (WrenchStamped) publishers
+      tool_flange_left_wrench_pub_ =
+          this->create_publisher<geometry_msgs::msg::WrenchStamped>(
+              "tool_flange/left/wrench", 10);
+      tool_flange_right_wrench_pub_ =
+          this->create_publisher<geometry_msgs::msg::WrenchStamped>(
+              "tool_flange/right/wrench", 10);
+
+      // Digital I/O and status publishers
+      tool_flange_left_status_pub_ =
+          this->create_publisher<rby1_msgs::msg::ToolFlangeStatus>(
+              "tool_flange/left/status", 10);
+      tool_flange_right_status_pub_ =
+          this->create_publisher<rby1_msgs::msg::ToolFlangeStatus>(
+              "tool_flange/right/status", 10);
     }
 
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
@@ -1254,73 +1271,123 @@ void RBY1_ROS2_DRIVER<ModelType>::read_joint_state() {
         battery_state_pub_->publish(bat_msg);
       }
 
-      // Publish Tool Flange State split
+      // Publish Classified Tool Flange States (IMU, Wrench, Status)
       if (publish_tool_flange_state_) {
-        auto fill_vec3 = [](std::array<double, 3> &dest,
-                            const Eigen::Vector<double, 3> &src, bool valid) {
-          if (valid) {
-            dest[0] = src[0];
-            dest[1] = src[1];
-            dest[2] = src[2];
-          } else {
-            dest[0] = 0.0;
-            dest[1] = 0.0;
-            dest[2] = 0.0;
-          }
-        };
-
-        // left flange
+        // --- Left Flange ---
         bool lf_valid =
             (state.tool_flange_left.time_since_last_update.tv_sec != 0 ||
              state.tool_flange_left.time_since_last_update.tv_nsec != 0);
         bool lf_ft_valid =
             (state.ft_sensor_left.time_since_last_update.tv_sec != 0 ||
              state.ft_sensor_left.time_since_last_update.tv_nsec != 0);
-        rby1_msgs::msg::ToolFlangeState tf_left;
-        fill_vec3(tf_left.ft_force, state.ft_sensor_left.force, lf_ft_valid);
-        fill_vec3(tf_left.ft_torque, state.ft_sensor_left.torque, lf_ft_valid);
-        fill_vec3(tf_left.gyro, state.tool_flange_left.gyro, lf_valid);
-        fill_vec3(tf_left.acceleration, state.tool_flange_left.acceleration,
-                  lf_valid);
-        tf_left.switch_a = lf_valid ? state.tool_flange_left.switch_A : false;
-        tf_left.output_voltage =
-            lf_valid ? state.tool_flange_left.output_voltage : 0;
-        tf_left.digital_input_a =
-            lf_valid ? state.tool_flange_left.digital_input_A : false;
-        tf_left.digital_input_b =
-            lf_valid ? state.tool_flange_left.digital_input_B : false;
-        tf_left.digital_output_a =
-            lf_valid ? state.tool_flange_left.digital_output_A : false;
-        tf_left.digital_output_b =
-            lf_valid ? state.tool_flange_left.digital_output_B : false;
-        tool_flange_left_pub_->publish(tf_left);
 
-        // right flange
+        // 1. Left IMU
+        sensor_msgs::msg::Imu imu_left;
+        imu_left.header.stamp = now;
+        imu_left.header.frame_id = "ee_left";
+        if (lf_valid) {
+          imu_left.angular_velocity.x = state.tool_flange_left.gyro[0];
+          imu_left.angular_velocity.y = state.tool_flange_left.gyro[1];
+          imu_left.angular_velocity.z = state.tool_flange_left.gyro[2];
+          imu_left.linear_acceleration.x =
+              state.tool_flange_left.acceleration[0];
+          imu_left.linear_acceleration.y =
+              state.tool_flange_left.acceleration[1];
+          imu_left.linear_acceleration.z =
+              state.tool_flange_left.acceleration[2];
+        }
+        imu_left.orientation_covariance[0] = -1.0; // Orientation not available
+        tool_flange_left_imu_pub_->publish(imu_left);
+
+        // 2. Left F/T (Wrench)
+        geometry_msgs::msg::WrenchStamped wrench_left;
+        wrench_left.header.stamp = now;
+        wrench_left.header.frame_id = "ee_left";
+        if (lf_ft_valid) {
+          wrench_left.wrench.force.x = state.ft_sensor_left.force[0];
+          wrench_left.wrench.force.y = state.ft_sensor_left.force[1];
+          wrench_left.wrench.force.z = state.ft_sensor_left.force[2];
+          wrench_left.wrench.torque.x = state.ft_sensor_left.torque[0];
+          wrench_left.wrench.torque.y = state.ft_sensor_left.torque[1];
+          wrench_left.wrench.torque.z = state.ft_sensor_left.torque[2];
+        }
+        tool_flange_left_wrench_pub_->publish(wrench_left);
+
+        // 3. Left Status (Digital I/O & Voltage)
+        rby1_msgs::msg::ToolFlangeStatus status_left;
+        status_left.header.stamp = now;
+        status_left.header.frame_id = "ee_left";
+        status_left.output_voltage =
+            lf_valid ? state.tool_flange_left.output_voltage : 0;
+        status_left.switch_a =
+            lf_valid ? state.tool_flange_left.switch_A : false;
+        status_left.digital_input_a =
+            lf_valid ? state.tool_flange_left.digital_input_A : false;
+        status_left.digital_input_b =
+            lf_valid ? state.tool_flange_left.digital_input_B : false;
+        status_left.digital_output_a =
+            lf_valid ? state.tool_flange_left.digital_output_A : false;
+        status_left.digital_output_b =
+            lf_valid ? state.tool_flange_left.digital_output_B : false;
+        tool_flange_left_status_pub_->publish(status_left);
+
+        // --- Right Flange ---
         bool rf_valid =
             (state.tool_flange_right.time_since_last_update.tv_sec != 0 ||
              state.tool_flange_right.time_since_last_update.tv_nsec != 0);
         bool rf_ft_valid =
             (state.ft_sensor_right.time_since_last_update.tv_sec != 0 ||
              state.ft_sensor_right.time_since_last_update.tv_nsec != 0);
-        rby1_msgs::msg::ToolFlangeState tf_right;
-        fill_vec3(tf_right.ft_force, state.ft_sensor_right.force, rf_ft_valid);
-        fill_vec3(tf_right.ft_torque, state.ft_sensor_right.torque,
-                  rf_ft_valid);
-        fill_vec3(tf_right.gyro, state.tool_flange_right.gyro, rf_valid);
-        fill_vec3(tf_right.acceleration, state.tool_flange_right.acceleration,
-                  rf_valid);
-        tf_right.switch_a = rf_valid ? state.tool_flange_right.switch_A : false;
-        tf_right.output_voltage =
+
+        // 1. Right IMU
+        sensor_msgs::msg::Imu imu_right;
+        imu_right.header.stamp = now;
+        imu_right.header.frame_id = "ee_right";
+        if (rf_valid) {
+          imu_right.angular_velocity.x = state.tool_flange_right.gyro[0];
+          imu_right.angular_velocity.y = state.tool_flange_right.gyro[1];
+          imu_right.angular_velocity.z = state.tool_flange_right.gyro[2];
+          imu_right.linear_acceleration.x =
+              state.tool_flange_right.acceleration[0];
+          imu_right.linear_acceleration.y =
+              state.tool_flange_right.acceleration[1];
+          imu_right.linear_acceleration.z =
+              state.tool_flange_right.acceleration[2];
+        }
+        imu_right.orientation_covariance[0] = -1.0; // Orientation not available
+        tool_flange_right_imu_pub_->publish(imu_right);
+
+        // 2. Right F/T (Wrench)
+        geometry_msgs::msg::WrenchStamped wrench_right;
+        wrench_right.header.stamp = now;
+        wrench_right.header.frame_id = "ee_right";
+        if (rf_ft_valid) {
+          wrench_right.wrench.force.x = state.ft_sensor_right.force[0];
+          wrench_right.wrench.force.y = state.ft_sensor_right.force[1];
+          wrench_right.wrench.force.z = state.ft_sensor_right.force[2];
+          wrench_right.wrench.torque.x = state.ft_sensor_right.torque[0];
+          wrench_right.wrench.torque.y = state.ft_sensor_right.torque[1];
+          wrench_right.wrench.torque.z = state.ft_sensor_right.torque[2];
+        }
+        tool_flange_right_wrench_pub_->publish(wrench_right);
+
+        // 3. Right Status (Digital I/O & Voltage)
+        rby1_msgs::msg::ToolFlangeStatus status_right;
+        status_right.header.stamp = now;
+        status_right.header.frame_id = "ee_right";
+        status_right.output_voltage =
             rf_valid ? state.tool_flange_right.output_voltage : 0;
-        tf_right.digital_input_a =
+        status_right.switch_a =
+            rf_valid ? state.tool_flange_right.switch_A : false;
+        status_right.digital_input_a =
             rf_valid ? state.tool_flange_right.digital_input_A : false;
-        tf_right.digital_input_b =
+        status_right.digital_input_b =
             rf_valid ? state.tool_flange_right.digital_input_B : false;
-        tf_right.digital_output_a =
+        status_right.digital_output_a =
             rf_valid ? state.tool_flange_right.digital_output_A : false;
-        tf_right.digital_output_b =
+        status_right.digital_output_b =
             rf_valid ? state.tool_flange_right.digital_output_B : false;
-        tool_flange_right_pub_->publish(tf_right);
+        tool_flange_right_status_pub_->publish(status_right);
       }
     }
   } catch (const std::exception &e) {

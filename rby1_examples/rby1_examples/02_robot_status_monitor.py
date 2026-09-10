@@ -12,13 +12,14 @@ Run:
 Topics subscribed:
   - robot_state       (RobotState)
   - battery_state     (sensor_msgs/BatteryState)
-  - tool_flange/left  (ToolFlangeState)
-  - tool_flange/right (ToolFlangeState)
+  - tool_flange/left/{imu, wrench, status}
+  - tool_flange/right/{imu, wrench, status}
 """
 import rclpy
 from rclpy.node import Node
-from rby1_msgs.msg import RobotState, ToolFlangeState
-from sensor_msgs.msg import BatteryState
+from rby1_msgs.msg import RobotState, ToolFlangeStatus
+from sensor_msgs.msg import BatteryState, Imu
+from geometry_msgs.msg import WrenchStamped
 import sys
 
 class RobotStatusMonitor(Node):
@@ -28,8 +29,12 @@ class RobotStatusMonitor(Node):
         # State caches
         self.robot_state_msg = None
         self.battery_msg = None
-        self.tf_left_msg = None
-        self.tf_right_msg = None
+        self.tf_left_imu = None
+        self.tf_left_wrench = None
+        self.tf_left_status = None
+        self.tf_right_imu = None
+        self.tf_right_wrench = None
+        self.tf_right_status = None
 
         # Subscriptions to flat state topics
         self.state_sub = self.create_subscription(
@@ -37,10 +42,20 @@ class RobotStatusMonitor(Node):
         self.battery_sub = self.create_subscription(
             BatteryState, 'battery_state', self.battery_callback, 10)
         
-        self.tf_left_sub = self.create_subscription(
-            ToolFlangeState, 'tool_flange/left', lambda msg: self.tf_callback(msg, 'Left'), 10)
-        self.tf_right_sub = self.create_subscription(
-            ToolFlangeState, 'tool_flange/right', lambda msg: self.tf_callback(msg, 'Right'), 10)
+        # Subscriptions to classified tool flange topics
+        self.tf_left_imu_sub = self.create_subscription(
+            Imu, 'tool_flange/left/imu', lambda msg: self.tf_imu_callback(msg, 'Left'), 10)
+        self.tf_left_wrench_sub = self.create_subscription(
+            WrenchStamped, 'tool_flange/left/wrench', lambda msg: self.tf_wrench_callback(msg, 'Left'), 10)
+        self.tf_left_status_sub = self.create_subscription(
+            ToolFlangeStatus, 'tool_flange/left/status', lambda msg: self.tf_status_callback(msg, 'Left'), 10)
+
+        self.tf_right_imu_sub = self.create_subscription(
+            Imu, 'tool_flange/right/imu', lambda msg: self.tf_imu_callback(msg, 'Right'), 10)
+        self.tf_right_wrench_sub = self.create_subscription(
+            WrenchStamped, 'tool_flange/right/wrench', lambda msg: self.tf_wrench_callback(msg, 'Right'), 10)
+        self.tf_right_status_sub = self.create_subscription(
+            ToolFlangeStatus, 'tool_flange/right/status', lambda msg: self.tf_status_callback(msg, 'Right'), 10)
 
         # Timer for 10 Hz dynamic console updates
         self.timer = self.create_timer(0.1, self.render_dashboard)
@@ -75,11 +90,23 @@ class RobotStatusMonitor(Node):
     def battery_callback(self, msg):
         self.battery_msg = msg
 
-    def tf_callback(self, msg, side):
+    def tf_imu_callback(self, msg, side):
         if side == 'Left':
-            self.tf_left_msg = msg
+            self.tf_left_imu = msg
         else:
-            self.tf_right_msg = msg
+            self.tf_right_imu = msg
+
+    def tf_wrench_callback(self, msg, side):
+        if side == 'Left':
+            self.tf_left_wrench = msg
+        else:
+            self.tf_right_wrench = msg
+
+    def tf_status_callback(self, msg, side):
+        if side == 'Left':
+            self.tf_left_status = msg
+        else:
+            self.tf_right_status = msg
 
     def render_dashboard(self):
         # Clear screen and return cursor to top-left
@@ -148,15 +175,23 @@ class RobotStatusMonitor(Node):
         print("-" * 65)
         
         # 3. Tool Flanges
-        for side, tf in [("Left", self.tf_left_msg), ("Right", self.tf_right_msg)]:
-            if tf:
+        for side, imu, wrench, status in [("Left", self.tf_left_imu, self.tf_left_wrench, self.tf_left_status),
+                                          ("Right", self.tf_right_imu, self.tf_right_wrench, self.tf_right_status)]:
+            if imu or wrench or status:
                 print(f"Tool Flange [{side}]:")
-                print(f"  FT Force:      {[round(x, 2) for x in tf.ft_force]} N")
-                print(f"  FT Torque:     {[round(x, 2) for x in tf.ft_torque]} Nm")
-                print(f"  IMU Gyro:      {[round(x, 3) for x in tf.gyro]} rad/s")
-                print(f"  IMU Accel:     {[round(x, 3) for x in tf.acceleration]} m/s^2")
-                print(f"  Output Volt:   {tf.output_voltage} mV | Switch A: {tf.switch_a}")
-                print(f"  Digital I/O:   Inputs: [A={tf.digital_input_a}, B={tf.digital_input_b}] | Outputs: [A={tf.digital_output_a}, B={tf.digital_output_b}]")
+                if wrench:
+                    f = [round(wrench.wrench.force.x, 2), round(wrench.wrench.force.y, 2), round(wrench.wrench.force.z, 2)]
+                    t = [round(wrench.wrench.torque.x, 2), round(wrench.wrench.torque.y, 2), round(wrench.wrench.torque.z, 2)]
+                    print(f"  FT Force:      {f} N")
+                    print(f"  FT Torque:     {t} Nm")
+                if imu:
+                    g = [round(imu.angular_velocity.x, 3), round(imu.angular_velocity.y, 3), round(imu.angular_velocity.z, 3)]
+                    a = [round(imu.linear_acceleration.x, 3), round(imu.linear_acceleration.y, 3), round(imu.linear_acceleration.z, 3)]
+                    print(f"  IMU Gyro:      {g} rad/s")
+                    print(f"  IMU Accel:     {a} m/s^2")
+                if status:
+                    print(f"  Output Volt:   {status.output_voltage} mV | Switch A: {status.switch_a}")
+                    print(f"  Digital I/O:   Inputs: [A={status.digital_input_a}, B={status.digital_input_b}] | Outputs: [A={status.digital_output_a}, B={status.digital_output_b}]")
             else:
                 print(f"Tool Flange [{side}]:  \033[1;33mNo connection or waiting for topic...\033[0m")
         print("=" * 65)

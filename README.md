@@ -100,8 +100,8 @@ To enable real-time scheduling (`SCHED_FIFO`) and eliminate gRPC/ROS 2 thread la
 ```bash
 # 1. Create a realtime limit configuration file (example for user 'nvidia'):
 sudo bash -c 'cat << EOF > /etc/security/limits.d/99-realtime.conf
-nvidia - rtprio 99
-nvidia - memlock unlimited
+<user> - rtprio 99
+<user> - memlock unlimited
 EOF'
 
 # Note: Replace 'nvidia' with your actual username (e.g. $USER) if different.
@@ -113,7 +113,7 @@ ulimit -r
 # Expected output: 99
 ```
 > [!IMPORTANT]
-> ## Apply settings, it is necessary to reboot or log out/in.
+> Apply settings, it is necessary to reboot or log out/in.
 
 
 
