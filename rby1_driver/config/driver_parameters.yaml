@@ -27,6 +27,9 @@
     
     # Collision options
     collision_threshold: 0.02 # meter
+    state_loss_timeout: 1.0 # s of consecutive failed state reads before the driver gives up
+    fjt_start_velocity_scale: 1.0 # follow_joint_trajectory: first waypoint within this share of the joint velocity limit
+
 
     # Status publish triggers
     publish_battery_state: true

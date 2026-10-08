@@ -1,0 +1,8 @@
+# Where the camera sits on the robot, for camera.launch.py (published as a static TF).
+# The default is the head mount the RB-Y1 URDF leaves commented out ("head_mount":
+# link_head_2 + 22 mm forward, 40 mm up). Measure yours and change it: AprilTag poses
+# reach the robot's frames through this transform.
+parent: link_head_2        # robot link the camera is fixed to
+frame: camera_link         # camera body frame: x forward, y left, z up
+xyz: [0.022, 0.0, 0.04]    # m, in parent
+rpy: [0.0, 0.0, 0.0]       # rad, in parent

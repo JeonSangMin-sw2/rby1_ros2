@@ -1,0 +1,15 @@
+# camera_publisher: a webcam through OpenCV, or an image/video file (camera.launch.py camera:=webcam|file).
+camera_publisher:
+  ros__parameters:
+    source: "0"                      # device index or /dev/videoN; an image or video file for camera:=file
+    width: 1280                      # asked of the camera; the node uses what it gives
+    height: 720
+    fps: 30.0
+    auto_exposure: true
+    exposure: 100.0                  # when auto_exposure is false, in the camera driver's units (V4L2: 100 us)
+    image_topic: /camera/image_raw
+    info_topic: /camera/camera_info
+    frame_id: camera_optical_frame
+    use_custom_intrinsics: false     # true: the camera model from intrinsics_file
+    intrinsics_file: ""              # camera_ws (camera_matrix, dist_coeffs) or ROS calibration YAML
+    horizontal_fov: 69.0             # deg, the pinhole guess without a calibration

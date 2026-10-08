@@ -33,6 +33,23 @@ from rby1_msgs.action import Rby1JointCommand
 from rby1_msgs.msg import JointCommand, RobotState
 from rby1_msgs.srv import StateOnOff
 
+# Values to change: edit these to adjust the example.
+# Zero pose, sent first
+ZERO_TORSO = [0.0] * 6                                # rad, torso_0 .. torso_5
+ZERO_RIGHT_ARM = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # rad
+ZERO_LEFT_ARM = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # rad
+ZERO_HEAD = [0.0] * 2                                 # rad
+ZERO_MINIMUM_TIME = 4.0                               # s, the move takes at least this long
+# Joint command, sent second
+TARGET_HEAD = [0.2, 0.4]                                   # rad
+TARGET_RIGHT_ARM = [0.0, -0.5, 0.0, -1.57, 0.0, 0.0, 0.0]  # rad, moved with impedance control
+IMPEDANCE_STIFFNESS = [100.0] * 7                          # right arm, one per joint
+IMPEDANCE_TORQUE_LIMIT = 100.0                             # right arm
+TARGET_LEFT_ARM = [0.0, 0.5, 0.0, -1.57, 0.0, 0.0, 0.0]    # rad
+TARGET_TORSO = [0.2, -0.4, 0.2]                            # rad, one per name in TORSO_JOINT_NAMES
+TORSO_JOINT_NAMES = ["torso_1", "torso_2", "torso_3"]      # the torso joints that move
+MINIMUM_TIME = 5.0                                         # s, for every part of the joint command
+
 class JointCommandExample(Node):
     def __init__(self):
         super().__init__('joint_command_example', namespace='rby1')
@@ -101,52 +118,52 @@ class JointCommandExample(Node):
         
         if use_zero_pose:
             cmd_torso = JointCommand()
-            cmd_torso.position = [0.0] * 6
-            cmd_torso.minimum_time = 4.0
+            cmd_torso.position = ZERO_TORSO
+            cmd_torso.minimum_time = ZERO_MINIMUM_TIME
             goal_msg.torso = cmd_torso
 
             cmd_right = JointCommand()
-            cmd_right.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            cmd_right.minimum_time = 4.0
+            cmd_right.position = ZERO_RIGHT_ARM
+            cmd_right.minimum_time = ZERO_MINIMUM_TIME
             goal_msg.right_arm = cmd_right
 
             cmd_left = JointCommand()
-            cmd_left.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            cmd_left.minimum_time = 4.0
+            cmd_left.position = ZERO_LEFT_ARM
+            cmd_left.minimum_time = ZERO_MINIMUM_TIME
             goal_msg.left_arm = cmd_left
 
             cmd_head = JointCommand()
-            cmd_head.position = [0.0] * 2
-            cmd_head.minimum_time = 4.0
+            cmd_head.position = ZERO_HEAD
+            cmd_head.minimum_time = ZERO_MINIMUM_TIME
             goal_msg.head = cmd_head
         else:
             # Example 1: Standard Joint Position Control for Head
             cmd_head = JointCommand()
-            cmd_head.position = [0.2, 0.4]
-            cmd_head.minimum_time = 5.0
+            cmd_head.position = TARGET_HEAD
+            cmd_head.minimum_time = MINIMUM_TIME
             goal_msg.head = cmd_head
 
             # Example 2: Impedance Control for Right Arm
             cmd_right = JointCommand()
-            cmd_right.position = [0.0, -0.5, 0.0, -1.57, 0.0, 0.0, 0.0]
+            cmd_right.position = TARGET_RIGHT_ARM
             cmd_right.use_impedance = True
-            cmd_right.stiffness = [100.0] * 7  # If empty, driver sets to 100.0 anyway!
-            cmd_right.torque_limit = 100.0
-            cmd_right.minimum_time = 5.0
+            cmd_right.stiffness = IMPEDANCE_STIFFNESS  # If empty, driver sets to 100.0 anyway!
+            cmd_right.torque_limit = IMPEDANCE_TORQUE_LIMIT
+            cmd_right.minimum_time = MINIMUM_TIME
             goal_msg.right_arm = cmd_right
-            
+
             # Example 3: Joint Position Control for Left Arm
             cmd_left = JointCommand()
-            cmd_left.position = [0.0, 0.5, 0.0, -1.57, 0.0, 0.0, 0.0]
-            cmd_left.minimum_time = 5.0
+            cmd_left.position = TARGET_LEFT_ARM
+            cmd_left.minimum_time = MINIMUM_TIME
             goal_msg.left_arm = cmd_left
-            
+
             # Example 4: Joint Group Control for Torso
             cmd_torso = JointCommand()
-            cmd_torso.position = [0.2, -0.4, 0.2]
+            cmd_torso.position = TARGET_TORSO
             cmd_torso.use_group_joint = True
-            cmd_torso.joint_names = ["torso_1", "torso_2", "torso_3"] # Must be explicitly set
-            cmd_torso.minimum_time = 5.0
+            cmd_torso.joint_names = TORSO_JOINT_NAMES # Must be explicitly set
+            cmd_torso.minimum_time = MINIMUM_TIME
             goal_msg.torso = cmd_torso
 
         self._action_client.wait_for_server()

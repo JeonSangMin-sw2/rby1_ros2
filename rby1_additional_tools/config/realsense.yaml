@@ -1,0 +1,33 @@
+# realsense_publisher: an Intel RealSense through librealsense (camera.launch.py camera:=realsense).
+# Only the streams switched on are opened and published.
+realsense_publisher:
+  ros__parameters:
+    serial: ""                       # empty: the first RealSense found (rs-enumerate-devices -s)
+    width: 1280                      # every stream opened at this size and rate
+    height: 720
+    fps: 30
+    use_rgb: true                    # colour, bgr8
+    use_depth: false                 # depth, 16UC1 in mm
+    use_ir_left: false               # infrared 1 (the depth reference), mono8
+    use_ir_right: false              # infrared 2, mono8
+    align_depth_to_color: false      # depth in colour pixels and the colour frame (needs use_rgb, use_depth)
+    rgb_topic: /camera/image_raw
+    rgb_info_topic: /camera/camera_info
+    depth_topic: /camera/depth/image_raw
+    depth_info_topic: /camera/depth/camera_info
+    ir_left_topic: /camera/ir_left/image_raw
+    ir_left_info_topic: /camera/ir_left/camera_info
+    ir_right_topic: /camera/ir_right/image_raw
+    ir_right_info_topic: /camera/ir_right/camera_info
+    frame_id: camera_optical_frame   # colour; the mount TF (camera_mount.yaml) places it on the robot
+    depth_frame_id: camera_depth_optical_frame        # depth and infrared 1, under frame_id by the device's extrinsics
+    ir_right_frame_id: camera_ir_right_optical_frame
+    auto_exposure: true              # colour
+    exposure: 6000.0                 # us, colour, when auto_exposure is false
+    gain: -1.0                       # colour; < 0 keeps the device's
+    ir_auto_exposure: true           # infrared/depth (on a D405 colour and infrared share one sensor: colour's settings win)
+    ir_exposure: 8500.0              # us, when ir_auto_exposure is false
+    emitter: true                    # IR projector: on for depth, off for clean infrared images
+    skip_frames: 10                  # dropped at the start while exposure settles
+    use_custom_intrinsics: false     # true: the colour model from intrinsics_file instead of the factory calibration
+    intrinsics_file: ""              # camera_ws (camera_matrix, dist_coeffs) or ROS calibration YAML

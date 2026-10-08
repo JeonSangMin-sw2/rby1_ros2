@@ -81,6 +81,13 @@ namespace rby1_ros2{
             std::string power_list_str;
             bool fault_reset_trigger;
             double collision_threshold_{0.03};
+            // Seconds of consecutive failed state reads before the robot counts as lost.
+            double state_loss_timeout_{1.0};
+            // A trajectory's first waypoint may need at most this share of a joint's
+            // velocity limit to be reached from the measured posture in its time.
+            double fjt_start_velocity_scale_{1.0};
+            int64_t last_state_ok_ns_{0};
+            int failed_state_reads_{0};
             bool publish_battery_state_{false};
             bool publish_tool_flange_state_{false};
             std::atomic<bool> is_control_canceled_{false};
@@ -117,6 +124,27 @@ namespace rby1_ros2{
 
             bool robot_initialize_flag{false};
             bool stream_active_{false};
+            // stream_part bits the active FollowJointTrajectory goal commands.
+            std::atomic<int> fjt_parts_{0};
+            // A command stream of the upper body -- the arms' or the torso's -- and what it carried.
+            struct BodyStream {
+                std::unique_ptr<rb::RobotCommandStreamHandler<ModelType>> handler;
+                // Parts (stream_part bits) this channel may carry: for the arms, the ones whose servo was on when it opened.
+                int carries{0};
+                // Parts its commands have named so far; see fit_stream_to().
+                int parts{0};
+                // Trajectory impedance changed while it was open: the next command goes out on a new stream.
+                bool kind_changed{false};
+                // Until when its last command is still moving (its minimum_time).
+                std::chrono::steady_clock::time_point busy_until{};
+                // Was that a one-shot command (robot_joint, cartesian) the robot may still be carrying out?
+                bool one_shot{false};
+            };
+            // The torso's and the arms' halves of one upper-body command; see send_body().
+            struct BodyCommand {
+                rb::BodyComponentBasedCommandBuilder torso, arms;
+                int parts{0};  // stream_part bits it names
+            };
             bool collision_enable_{true};
 
             // ── Per-part control flags ──────────────────────────────────────────
@@ -180,9 +208,10 @@ namespace rby1_ros2{
 
             std::atomic<bool> hardware_control_active_{false};
             std::atomic<uint64_t> last_stream_command_time_ns_{0};
+            static constexpr double kStreamIdleTimeout = 60.0; // s without any stream command before every stream is closed
             rclcpp::TimerBase::SharedPtr stream_safety_timer_;
 
-            // Impedance state for follow_joint_trajectory
+            // Impedance state for follow_joint_trajectory and stream_joint (set_trajectory_impedance)
             bool   trajectory_impedance_enabled_torso_{false};
             bool   trajectory_impedance_enabled_right_arm_{false};
             bool   trajectory_impedance_enabled_left_arm_{false};
@@ -191,6 +220,7 @@ namespace rby1_ros2{
             std::vector<double> trajectory_stiffness_left_arm_;
             double trajectory_damping_ratio_{1.0};
             double trajectory_torque_limit_{10.0};
+            static constexpr double kTrajectoryStiffness = 100.0; // N·m/rad, when the request gives none
             double stream_hz_{15.0};
 
             void gravity_compensation_callback(const std::shared_ptr<rby1_msgs::srv::GravityCompensation::Request> request,
@@ -206,6 +236,17 @@ namespace rby1_ros2{
                                            std::shared_ptr<rby1_msgs::srv::StateOnOff::Response> response);
             void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
             void deactivate_all_streams();
+            enum stream_part { STREAM_TORSO = 1, STREAM_RIGHT_ARM = 2, STREAM_LEFT_ARM = 4, STREAM_HEAD = 8 };
+            // What stream_control opens and closes: its `parameters` names them (arm, torso, mobile, head; all).
+            enum stream_channel { CHANNEL_ARM = 1, CHANNEL_TORSO = 2, CHANNEL_MOBILE = 4, CHANNEL_HEAD = 8, CHANNEL_ALL = 15 };
+            static int parse_stream_channels(const std::string &parameters);
+            static std::string stream_channel_names(int channels);
+            int open_stream_channels() const;
+            void close_stream_channels(int channels, bool cancel);
+            bool fit_stream_to(BodyStream &stream, int parts, double busy_for, double wait_limit, bool one_shot);
+            std::string send_body(BodyCommand &command, double busy_for, double wait_limit, bool one_shot);
+            void send_head(const rb::ComponentBasedCommandBuilder &head);
+            int trajectory_parts(const trajectory_msgs::msg::JointTrajectory &trajectory) const;
             void check_stream_safety();
             
             geometry_msgs::msg::Pose matrix_to_pose(const Eigen::Matrix4d& matrix);
@@ -216,6 +257,8 @@ namespace rby1_ros2{
             ~RBY1_ROS2_DRIVER();
             bool check_controll_manager();
             void read_joint_state();
+            rb::RobotState<ModelType> get_state_with_retry(int attempts = 3);
+            std::optional<std::string> start_problem(const trajectory_msgs::msg::JointTrajectory &trajectory);
             std::string finish_code_to_string(rb::RobotCommandFeedback::FinishCode code);
 
             void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
@@ -282,8 +325,15 @@ namespace rby1_ros2{
             void cancel_control_callback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                                          std::shared_ptr<std_srvs::srv::Trigger::Response> response);
             
-            std::unique_ptr<rb::RobotCommandStreamHandler<ModelType>> upper_body_stream_handler_;
+            // Four stream channels, each its own SDK command stream, so one runs while
+            // another is commanded: both arms together (one more stream per arm would
+            // cost a send each cycle), the torso, the mobile base and the head.
+            BodyStream arm_stream_, torso_stream_;
+            // When a stream was last closed: one opened right after takes commands the robot ignores.
+            std::chrono::steady_clock::time_point stream_closed_at_{};
+            static constexpr auto kStreamReopenGap = std::chrono::milliseconds(300);
             std::unique_ptr<rb::RobotCommandStreamHandler<ModelType>> mobility_stream_handler_;
+            std::unique_ptr<rb::RobotCommandStreamHandler<ModelType>> head_stream_handler_;
             std::shared_ptr<rclcpp_action::ServerGoalHandle<FollowJointTrajectory>> active_follow_joint_trajectory_goal_{nullptr};
 
             bool process_joint_part(const rby1_msgs::msg::JointCommand& cmd,

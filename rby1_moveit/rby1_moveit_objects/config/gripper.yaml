@@ -1,0 +1,65 @@
+# The RB-Y1 gripper as modules on the tool frames, for cuMotion:
+#   ros2 launch rby1_moveit_objects objects.launch.py config:=gripper.yaml
+#
+# cuMotion's model of the planning arm ends at its tool frame (ee_right / ee_left;
+# robot.body_ends_at_tool in rby1_isaac_ros's cumotion.yaml). What is mounted there
+# is given here, part by part, and the target executor turns each part into spheres
+# on the hand. A part named in the executor's `free_objects` is left out -- it may
+# then touch anything. The names also match robot links: MoveIt checks every path
+# against the robot's own model, gripper included, and must allow the same parts.
+#   ros2 param set /rby1_target_executor free_objects "['gripper_*finger*']"   # the fingers, parts and links
+#   ros2 param set /rby1_target_executor free_objects "['']"                   # nothing
+# Another tool: copy this file, replace the parts (format: config/objects.yaml), and
+# launch it instead.
+#
+# The parts are the gripper's own meshes at the poses of the robot's URDF; the
+# fingers stand fully open (5 cm each side), their widest. MoveIt already has the
+# gripper as robot links, so each part may touch those (touch_links).
+objects:
+  - name: gripper_right_body
+    frame: ee_right
+    attach: true
+    type: mesh
+    mesh: package://rby1_description/meshes/rby1m/EE_BODY.dae
+    touch_links: [ee_right, gripper_right, gripper_finger_r1, gripper_finger_r2, link_right_arm_6, link_right_arm_5]
+
+  - name: gripper_right_finger_1
+    frame: ee_right
+    attach: true
+    xyz: [0.053, 0.0, -0.075]
+    type: mesh
+    mesh: package://rby1_description/meshes/rby1m/EE_FINGER.dae
+    touch_links: [ee_right, gripper_right, gripper_finger_r1, gripper_finger_r2, link_right_arm_6, link_right_arm_5]
+
+  - name: gripper_right_finger_2
+    frame: ee_right
+    attach: true
+    xyz: [-0.053, 0.0, -0.075]
+    rpy: [0.0, 0.0, 3.14159265]
+    type: mesh
+    mesh: package://rby1_description/meshes/rby1m/EE_FINGER.dae
+    touch_links: [ee_right, gripper_right, gripper_finger_r1, gripper_finger_r2, link_right_arm_6, link_right_arm_5]
+
+  - name: gripper_left_body
+    frame: ee_left
+    attach: true
+    type: mesh
+    mesh: package://rby1_description/meshes/rby1m/EE_BODY.dae
+    touch_links: [ee_left, gripper_left, gripper_finger_l1, gripper_finger_l2, link_left_arm_6, link_left_arm_5]
+
+  - name: gripper_left_finger_1
+    frame: ee_left
+    attach: true
+    xyz: [0.053, 0.0, -0.075]
+    type: mesh
+    mesh: package://rby1_description/meshes/rby1m/EE_FINGER.dae
+    touch_links: [ee_left, gripper_left, gripper_finger_l1, gripper_finger_l2, link_left_arm_6, link_left_arm_5]
+
+  - name: gripper_left_finger_2
+    frame: ee_left
+    attach: true
+    xyz: [-0.053, 0.0, -0.075]
+    rpy: [0.0, 0.0, 3.14159265]
+    type: mesh
+    mesh: package://rby1_description/meshes/rby1m/EE_FINGER.dae
+    touch_links: [ee_left, gripper_left, gripper_finger_l1, gripper_finger_l2, link_left_arm_6, link_left_arm_5]

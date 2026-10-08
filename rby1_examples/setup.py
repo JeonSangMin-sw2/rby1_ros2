@@ -41,6 +41,8 @@ setup(
             '12_mobile_base_control = rby1_examples.12_mobile_base_control:main',
             '13_stream_command = rby1_examples.13_stream_command:main',
             '14_collision_safety_control = rby1_examples.14_collision_safety_control:main',
+            '15_cartesian_target_move = rby1_examples.15_cartesian_target_move:main',
+            '16_target_shuttle_publisher = rby1_examples.16_target_shuttle_publisher:main',
         ],
     },
 )

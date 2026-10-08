@@ -22,6 +22,22 @@ from rby1_msgs.msg import JointCommand, RobotState
 from rby1_msgs.srv import StateOnOff
 from sensor_msgs.msg import JointState
 
+# Values to change: edit these to adjust the example.
+# Zero pose, the safe pose the robot starts from
+ZERO_TORSO = [0.0] * 6                                       # rad, torso_0 .. torso_5
+ZERO_RIGHT_ARM = [0.0] * 7                                   # rad
+ZERO_LEFT_ARM = [0.0] * 7                                    # rad
+ZERO_HEAD = [0.0] * 2                                        # rad
+ZERO_MINIMUM_TIME = 4.0                                      # s, the move takes at least this long
+# The command that makes the arms collide; torso and head stay at the zero pose
+COLLIDING_RIGHT_ARM = [0.0, 0.0, 0.5, -1.57, 0.0, 0.0, 0.0]  # rad
+COLLIDING_LEFT_ARM = [0.0, 0.0, -0.5, -1.57, 0.0, 0.0, 0.0]  # rad
+COLLIDING_MINIMUM_TIME = 8.0                                 # s
+# Recovery to the pose recorded before that command
+RECOVERY_DELAY = 0.5                                         # s between canceling the command and recovering
+RECOVERY_MINIMUM_TIME = 5.0                                  # s
+GOAL_PRIORITY = 10                                           # of every goal here
+
 class CollisionSafetyExample(Node):
     def __init__(self):
         super().__init__('collision_safety_example', namespace='rby1')
@@ -134,7 +150,7 @@ class CollisionSafetyExample(Node):
             goal_msg.head.position = head_pos
             goal_msg.head.minimum_time = minimum_time
 
-        goal_msg.priority = 10
+        goal_msg.priority = GOAL_PRIORITY
         self._action_client.wait_for_server()
         return self._action_client.send_goal_async(goal_msg)
 
@@ -150,11 +166,11 @@ def main(args=None):
 
     # 3. Move to initial safe Zero Pose
     node.get_logger().info('Step 1: Moving to Zero Pose (initial safe pose)...')
-    torso_pos = [0.0] * 6
-    right_pos = [0.0] * 7
-    left_pos = [0.0] * 7
-    head_pos = [0.0] * 2
-    min_time = 4.0
+    torso_pos = ZERO_TORSO
+    right_pos = ZERO_RIGHT_ARM
+    left_pos = ZERO_LEFT_ARM
+    head_pos = ZERO_HEAD
+    min_time = ZERO_MINIMUM_TIME
     
     future = node.send_joint_goal(torso_pos, right_pos, left_pos, head_pos, min_time)
     rclpy.spin_until_future_complete(node, future)
@@ -185,10 +201,10 @@ def main(args=None):
     # 5. Command colliding pose to trigger safety retreat
     node.get_logger().info('Step 2: Sending a self-colliding command (arms crossing yaw joints)...')
     
-    colliding_right_pos = [0.0, 0.0, 0.5, -1.57, 0.0, 0.0, 0.0]
-    colliding_left_pos = [0.0, 0.0, -0.5, -1.57, 0.0, 0.0, 0.0]
-    
-    future = node.send_joint_goal(torso_pos, colliding_right_pos, colliding_left_pos, head_pos, 8.0)
+    colliding_right_pos = COLLIDING_RIGHT_ARM
+    colliding_left_pos = COLLIDING_LEFT_ARM
+
+    future = node.send_joint_goal(torso_pos, colliding_right_pos, colliding_left_pos, head_pos, COLLIDING_MINIMUM_TIME)
     rclpy.spin_until_future_complete(node, future)
     goal_handle = future.result()
     if not goal_handle.accepted:
@@ -213,11 +229,11 @@ def main(args=None):
         node.get_logger().info('Colliding goal canceled.')
 
         # Wait a moment for safety
-        time.sleep(0.5)
+        time.sleep(RECOVERY_DELAY)
 
         # Send recovery goal to return to pre-command pose
         node.get_logger().info('Sending recovery goal to return to the pre-command pose...')
-        rec_future = node.send_joint_goal(pre_cmd_torso, pre_cmd_right, pre_cmd_left, pre_cmd_head, 5.0)
+        rec_future = node.send_joint_goal(pre_cmd_torso, pre_cmd_right, pre_cmd_left, pre_cmd_head, RECOVERY_MINIMUM_TIME)
         rclpy.spin_until_future_complete(node, rec_future)
         rec_goal_handle = rec_future.result()
         if not rec_goal_handle.accepted:
