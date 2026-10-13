@@ -93,6 +93,25 @@ source /opt/ros/humble/setup.bash
 source ~/.bashrc
 ```
 
+#### ROS domain (optional)
+
+ROS 2 nodes see each other only when they have the same domain number (`ROS_DOMAIN_ID`, 0 when it is not set). If
+other robots or PCs on the same network run ROS 2, their topics mix with this robot's. To keep this robot apart,
+choose a number from 0 to 101 that nothing else on the network uses, and set it in one of two ways:
+
+```bash
+# for this terminal only: type it in every terminal you use
+export ROS_DOMAIN_ID=30
+
+# always: new terminals get it from ~/.bashrc
+echo 'export ROS_DOMAIN_ID=30' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Everything that has to talk to the driver — examples, MoveIt, tools on another PC or in a container — needs the same
+number. Check with `echo $ROS_DOMAIN_ID` (an empty line means 0) and `ros2 node list`, which shows
+`/rby1/rby1_ros2_driver` from any terminal of the same domain.
+
 ### 1-8. Real-time (RT) Priority Setup (Required for 100Hz Real-Time Control)
 
 To enable real-time scheduling (`SCHED_FIFO`) and eliminate gRPC/ROS 2 thread latency under high CPU loads, configure real-time priority limits for your user account (e.g. `nvidia`):
@@ -263,14 +282,15 @@ ros2 launch rby1_driver rby1_ros2_driver.launch.py
 ros2 launch rby1_moveit_executor moveit_executor.launch.py              # with RViz; rviz:=false without
 ```
 
-**Step 2 — Move to a target.** With `cycles:=1` the publisher example sends two targets, `period` (5 s) apart: here
-the hand goes 5 cm forward and up, then back to where the ready pose has it. A point is x, y, z, roll, pitch, yaw —
+**Step 2 — Move to a target.** The publisher example sends two targets in turn, `period` (5 s) apart, until Ctrl+C:
+here the hand goes 5 cm forward and up, then back to where the ready pose has it, and so on. Stop it with Ctrl+C
+when you have seen enough. A point is x, y, z, roll, pitch, yaw —
 always six values; `-1.571, -1.071, 1.571` is how the right hand is turned at the ready pose. The example only
 publishes, so watch the planner's answers in another terminal.
 
 ```bash
 ros2 topic echo /rby1/right_arm/target_status std_msgs/msg/String       # another terminal: the planner's answers
-ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p cycles:=1 \
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
     -p "point_a:=[0.463,-0.367,1.166,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.367,1.116,-1.571,-1.071,1.571]"
 ```
 
@@ -281,7 +301,7 @@ arrives while the arm is still moving runs when that move ends.
 The left arm is moved the same way, with nothing restarted: give its two topics and points on its side.
 
 ```bash
-ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p cycles:=1 \
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
     -p target_topic:=/rby1/left_arm/target_pose -p status_topic:=/rby1/left_arm/target_status \
     -p "point_a:=[0.463,0.367,1.166,1.571,-1.071,-1.571]" -p "point_b:=[0.413,0.367,1.116,1.571,-1.071,-1.571]"
 ```
@@ -291,13 +311,11 @@ is refused and the robot does not move. Without the box the same target works.
 
 ```bash
 ros2 run rby1_moveit_objects scene add box wall --xyz 0.437 -0.367 1.116 --size 0.04 0.04 0.04
-ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p cycles:=1 \
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
     -p "point_a:=[0.563,-0.367,1.116,-1.571,-1.071,1.571]" \
     -p "point_b:=[0.413,-0.367,1.116,-1.571,-1.071,1.571]"                  # point_a is answered FAILED: planning failed ...
-ros2 run rby1_moveit_objects scene remove wall
-ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p cycles:=1 \
-    -p "point_a:=[0.563,-0.367,1.116,-1.571,-1.071,1.571]" \
-    -p "point_b:=[0.413,-0.367,1.116,-1.571,-1.071,1.571]"                  # point_a is answered DONE
+ros2 run rby1_moveit_objects scene remove wall                              # another terminal, while it runs:
+                                                                            # from the next round point_a is answered DONE
 ```
 
 `scene list` shows what is in the scene, `scene clear` empties it, and `scene add sphere|cylinder`, `scene move` and
@@ -323,15 +341,37 @@ ros2 topic pub --once /rby1/scene/object_point geometry_msgs/msg/PointStamped \
 ros2 run rby1_moveit_objects scene remove point_object                  # it stays in the scene until removed
 ```
 
+The same node can follow a pose instead — a marker the camera sees. With `pose_topic` it takes the position of every
+`geometry_msgs/PoseStamped` on that topic to `base` with TF and puts the object there, so a marker held next to the
+robot becomes an obstacle the planner goes around. A pose within `min_move` (1 cm) of where the last one put the
+object is ignored: a marker's pose shakes a little in every image.
+
+```bash
+# the planner of step 1, the camera and the marker detector are running (/rby1/marker_7/pose is published)
+ros2 launch rby1_moveit_objects point_object.launch.py pose_topic:=/rby1/marker_7/pose
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0   # another terminal; Ctrl+C to end
+# show marker 7 between the two points while the hand rests at one of them: the next legs go around it
+ros2 run rby1_moveit_objects scene remove point_object                  # afterwards; stop the launch first
+```
+
+- A way around takes longer than the straight one (3–4.5 s here), hence `period:=8.0`.
+- MoveIt looks at the scene when it plans a leg; cuMotion also while the arm moves. Either way, an object that lands
+  **on the arm or right in front of the moving hand** cannot be gone around: cuMotion stops the arm, and every target
+  after that is refused (`obstacle already touches the arm`) until the object is removed or moved away.
+- The object stays where the marker was last seen, also when the marker goes out of sight. To have it removed after
+  a while without the marker, set `remove_after` (seconds) in `config/point_object.yaml`.
+- It needs the robot's TF (a planner's launch) and the camera's mounting TF; without them the node warns that it
+  does not know where the pose is in `base`.
+
 **Step 4 — Shuttle between two points, around an obstacle.** The hand goes back and forth between `point_a` (the
 ready pose) and `point_b` (30 cm above it), three round trips; give your own as x, y, z, roll, pitch, yaw. Put a box
 midway between the two points: with it in the scene, every leg is planned around it.
 
 ```bash
-ros2 run rby1_examples 16_target_shuttle_publisher
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0   # around a box a leg takes longer
+# another terminal, while the hand rests at one of the two points:
 ros2 run rby1_moveit_objects scene add box shuttle_box --xyz 0.413 -0.367 1.266 --size 0.06 0.06 0.06
-ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p cycles:=2 -p period:=8.0   # longer legs: around the box
-ros2 run rby1_moveit_objects scene remove shuttle_box
+ros2 run rby1_moveit_objects scene remove shuttle_box                          # the legs are straight again
 ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
     -p "point_a:=[0.413,-0.367,1.116,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.167,1.216,-1.571,-1.071,1.571]"
 ```

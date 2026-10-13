@@ -3,7 +3,7 @@
 Target Shuttle Publisher Example
 ================================
 Publishes two hand poses in turn on a target topic: `point_a`, `period` seconds
-later `point_b`, and so on, for `cycles` round trips. It only publishes. Whatever
+later `point_b`, and so on until Ctrl+C. It only publishes. Whatever
 listens on the topic moves the arm:
 
   15_cartesian_target_move   the driver alone: no planner, nothing is checked for
@@ -23,7 +23,7 @@ the cuMotion executor switches to it at once; rby1_moveit_executor and
 
 Sequence:
   1. Wait until something listens on `target_topic` (up to WAIT_TIMEOUT s).
-  2. `cycles` times: `point_a`, `period` s later `point_b`, `period` s later the next.
+  2. Until Ctrl+C: `point_a`, `period` s later `point_b`, `period` s later `point_a` again.
 
 Watch: "-> point_a ..." for every target sent and, after each, what the listener
 answers on `status_topic` (EXECUTING ..., DONE, or FAILED: <reason>). The answers
@@ -36,7 +36,7 @@ Before: the RB-Y1 driver, and one listener showing READY:
 
 Run:
   ros2 run rby1_examples 16_target_shuttle_publisher
-  ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0 -p cycles:=0
+  ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0
   ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
       -p "point_a:=[0.413,-0.367,1.116,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.167,1.216,-1.571,-1.071,1.571]"
   The left arm: both topics, and points on the left side
@@ -47,10 +47,9 @@ Run:
 Parameters (defaults):
   target_topic  /rby1/right_arm/target_pose    where the targets go
   status_topic  /rby1/right_arm/target_status  the listener's answers, logged
-  point_a       [0.413, -0.367, 1.116, -1.571, -1.071, 1.571]   the right hand at the ready pose
-  point_b       [0.413, -0.367, 1.416, -1.571, -1.071, 1.571]   30 cm above it
+  point_a       [0.413, -0.367, 1.0, -1.571, -1.071, 1.571]     12 cm below the right hand at the ready pose
+  point_b       [0.413, -0.367, 1.5, -1.571, -1.071, 1.571]     50 cm above point_a
   period        5.0 s                          from one target to the next: longer than a move takes
-  cycles        3                              round trips; 0: until Ctrl+C
 A point is always 6 values. Write every value as a float (1.0, not 1).
 
 Topics published:  <target_topic>  (std_msgs/Float64MultiArray, 16 values, row-major 4x4 in base)
@@ -70,10 +69,9 @@ WAIT_TIMEOUT = 15.0  # s to wait for something to listen on the target topic
 # Defaults of the parameters of the same name; the table above describes them.
 TARGET_TOPIC = '/rby1/right_arm/target_pose'
 STATUS_TOPIC = '/rby1/right_arm/target_status'
-POINT_A = [0.413, -0.367, 1.116, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
-POINT_B = [0.413, -0.367, 1.416, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
+POINT_A = [0.413, -0.2, 1.0, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
+POINT_B = [0.413, -0.2, 1.5, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
 PERIOD = 5.0                                             # s
-CYCLES = 3                                               # 0: until Ctrl+C
 
 
 def pose_values(point):
@@ -98,11 +96,8 @@ class TargetShuttlePublisher(Node):
         self.points = [(name, list(self.declare_parameter(name, default).value))
                        for name, default in (('point_a', POINT_A), ('point_b', POINT_B))]
         self.period = float(self.declare_parameter('period', PERIOD).value)
-        self.cycles = int(self.declare_parameter('cycles', CYCLES).value)
         if not self.period > 0.0:
             raise ValueError('period must be positive')
-        if self.cycles < 0:
-            raise ValueError('cycles must be 0 (until Ctrl+C) or more')
         self.targets = [pose_values(point) for _, point in self.points]
         self.publisher = self.create_publisher(Float64MultiArray, self.target_topic, 10)
         self.create_subscription(String, self.status_topic, self.on_status, 10)
@@ -134,11 +129,10 @@ class TargetShuttlePublisher(Node):
     def run(self):
         self.wait_for_listener()
         cycle = 0
-        while self.cycles == 0 or cycle < self.cycles:
+        while True:
             cycle += 1
-            round_text = f'round {cycle}' if self.cycles == 0 else f'round {cycle}/{self.cycles}'
             for (name, point), target in zip(self.points, self.targets):
-                self.get_logger().info(f'{round_text}: -> {name} {point}')
+                self.get_logger().info(f'round {cycle}: -> {name} {point}')
                 self.publisher.publish(Float64MultiArray(data=target))
                 self.spin_for(self.period)
 

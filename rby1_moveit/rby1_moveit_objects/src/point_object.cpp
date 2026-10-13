@@ -33,4 +33,8 @@ bool moved(const std::optional<std::array<double, 3>> & last, const std::array<d
   return std::hypot((*last)[0] - now[0], (*last)[1] - now[1], (*last)[2] - now[2]) > min_move;
 }
 
+bool gone(double since_last_pose, double remove_after) {
+  return remove_after > 0.0 && since_last_pose > remove_after;
+}
+
 }  // namespace rby1_moveit_objects

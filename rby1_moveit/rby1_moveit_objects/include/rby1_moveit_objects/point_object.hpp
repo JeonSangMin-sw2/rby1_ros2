@@ -28,4 +28,8 @@ ObjectSpec at_point(const PointObject & object, const std::string & frame, doubl
 // little in every image, and every move of the object is a change of the planning scene.
 bool moved(const std::optional<std::array<double, 3>> & last, const std::array<double, 3> & now, double min_move);
 
+// Whether the object a pose placed is to be taken out of the scene: `remove_after` is
+// set (above 0) and no pose came for longer than that (both in seconds).
+bool gone(double since_last_pose, double remove_after);
+
 }  // namespace rby1_moveit_objects

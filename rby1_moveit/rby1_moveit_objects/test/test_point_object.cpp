@@ -129,6 +129,13 @@ TEST(PointObject, APoseMovesTheObjectOnlyWhenItIsFurtherThanMinMove) {
   EXPECT_FALSE(moved(last, {0.5, -0.3, 1.0}, 0.0));
 }
 
+TEST(PointObject, TheObjectGoesOnlyWhenRemoveAfterIsSetAndThePoseStayedAwayLonger) {
+  EXPECT_FALSE(gone(1000.0, 0.0));  // 0: never
+  EXPECT_FALSE(gone(1.9, 2.0));
+  EXPECT_FALSE(gone(2.0, 2.0));
+  EXPECT_TRUE(gone(2.1, 2.0));
+}
+
 // The shipped file read as YAML: the node itself takes it as ROS parameters.
 TEST(PointObject, TheShippedParameterFileDescribesAValidObject) {
   const YAML::Node parameters = YAML::LoadFile(POINT_OBJECT)["rby1_object_at_point"]["ros__parameters"];

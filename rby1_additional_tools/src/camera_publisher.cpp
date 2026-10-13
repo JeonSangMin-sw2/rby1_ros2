@@ -56,8 +56,9 @@ public:
       if (!opened) {
         throw std::runtime_error("cannot open " + source_.path +
                                  (source_.kind == rby1_additional_tools::Source::Kind::device
-                                    ? " -- is a camera plugged in (ls /dev/video*), and is this user in the "
-                                      "video group?" : ""));
+                                    ? " as a webcam -- is one plugged in (ls /dev/video*), and is this user in "
+                                      "the video group? A RealSense has /dev/video* too but does not open this "
+                                      "way: start it with camera:=realsense" : ""));
       }
       if (source_.kind == rby1_additional_tools::Source::Kind::device) {
         capture_.set(cv::CAP_PROP_FRAME_WIDTH, width_);

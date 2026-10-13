@@ -52,12 +52,16 @@ int main(int argc, char ** argv) {
 
   PointObject object;
   std::string pose_topic;
-  double min_move = 0.0;
+  double min_move = 0.0, remove_after = 0.0;
   try {
     pose_topic = node->declare_parameter("pose_topic", std::string());
     min_move = node->declare_parameter("min_move", 0.01);
     if (!(min_move >= 0.0) || !std::isfinite(min_move)) {
       throw std::invalid_argument("min_move must be 0 or more (m), got " + std::to_string(min_move));
+    }
+    remove_after = node->declare_parameter("remove_after", 0.0);
+    if (!(remove_after >= 0.0) || !std::isfinite(remove_after)) {
+      throw std::invalid_argument("remove_after must be 0 (never) or more (s), got " + std::to_string(remove_after));
     }
     ObjectSpec spec;
     spec.name = node->declare_parameter("name", std::string());
@@ -85,6 +89,7 @@ int main(int argc, char ** argv) {
   // The same for a pose: the newest one.
   std::optional<PoseStamped> latest_pose;
   std::optional<std::array<double, 3>> last_pose_place;
+  auto last_pose_time = std::chrono::steady_clock::now();  // when a pose last told where it is in base
   rclcpp::Subscription<PoseStamped>::SharedPtr pose_subscription;
   std::unique_ptr<tf2_ros::Buffer> buffer;
   std::unique_ptr<tf2_ros::TransformListener> listener;
@@ -101,6 +106,9 @@ int main(int argc, char ** argv) {
   if (!pose_topic.empty()) {
     RCLCPP_INFO(node->get_logger(), "and where %s is, in %s by TF, when that is more than %.3f m from where the "
                 "last pose put it", pose_topic.c_str(), kBase, min_move);
+    if (remove_after > 0.0) {
+      RCLCPP_INFO(node->get_logger(), "after %.1f s without a pose the object is taken out of the scene", remove_after);
+    }
   }
 
   // Scene spins the node itself while it waits for move_group, so the node is not left
@@ -111,6 +119,18 @@ int main(int argc, char ** argv) {
     if (!available) {
       RCLCPP_WARN_THROTTLE(node->get_logger(), clock, 5000,
                            "/apply_planning_scene is not available -- is move_group running on this ROS domain?");
+    }
+    const double since_pose =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - last_pose_time).count();
+    if (available && last_pose_place && !latest_pose && gone(since_pose, remove_after)) {
+      try {
+        scene.remove({object.spec.name});
+        RCLCPP_INFO(node->get_logger(), "%s removed: no pose on %s for %.1f s", object.spec.name.c_str(),
+                    pose_topic.c_str(), since_pose);
+      } catch (const std::exception & error) {
+        RCLCPP_WARN(node->get_logger(), "%s not removed: %s", object.spec.name.c_str(), error.what());
+      }
+      last_pose_place.reset();  // the next pose puts it back
     }
     if (!available || (!latest && !latest_pose)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -140,6 +160,7 @@ int main(int argc, char ** argv) {
           rotation * Eigen::Vector3d(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z) +
           Eigen::Vector3d(transform.translation.x, transform.translation.y, transform.translation.z);
         const std::array<double, 3> place{in_base.x(), in_base.y(), in_base.z()};
+        last_pose_time = std::chrono::steady_clock::now();
         if (!moved(last_pose_place, place, min_move)) continue;
         const auto spec = at_point(object, kBase, place[0], place[1], place[2]);
         scene.apply({collision_object(spec)});

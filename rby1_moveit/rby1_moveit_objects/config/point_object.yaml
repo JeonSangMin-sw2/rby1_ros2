@@ -14,6 +14,9 @@
 #               ros2 launch rby1_moveit_objects point_object.launch.py pose_topic:=/rby1/marker_7/pose
 #   min_move    m; a pose moves the object only when it is further than this from where the
 #               last pose put it. A marker's pose shakes a little in every image.
+#   remove_after  s; when no pose came for this long (the marker is out of sight or hidden),
+#               the object is taken out of the scene, and the next pose puts it back.
+#               0.0: never -- it stays where the marker was last seen.
 #
 # These are ROS parameters: write every number with a decimal point (0.1, 1.0 -- not 1),
 # or the node refuses the file.
@@ -21,10 +24,11 @@ rby1_object_at_point:
   ros__parameters:
     name: point_object
     kind: box
-    size: [0.06, 0.06, 0.06]
+    size: [0.12, 0.12, 0.12]
     # radius: 0.03
     # height: 0.10
     offset: [0.0, 0.0, 0.0]
     rpy: [0.0, 0.0, 0.0]
     pose_topic: ""
     min_move: 0.01
+    remove_after: 0.0 # if this is 0.0, the object stays in the scene when the pose disappears

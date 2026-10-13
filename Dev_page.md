@@ -46,7 +46,7 @@ The values an example uses — postures, times, speeds, priorities, how long it 
 | `13_stream_command` | `ros2 run rby1_examples 13_stream_command` | Alternates Zero/Ready poses using regular joint commands over persistent stream with varying wait intervals |
 | `14_collision_safety_control` | `ros2 run rby1_examples 14_collision_safety_control` | use collision value in robot.state, Demonstrates that when collision happens, robot automatically moves retreat to initial safe pose.  |
 | `15_cartesian_target_move` | `ros2 run rby1_examples 15_cartesian_target_move` | The simplest target executor: takes hand targets from `/rby1/right_arm/target_pose` until Ctrl+C and moves the hand to each with the driver alone, `mode:=command` (one `robot_cartesian` command) or `mode:=stream` (`stream_cartesian` steps). Answers on `/rby1/right_arm/target_status`. No planner, no collision check |
-| `16_target_shuttle_publisher` | `ros2 run rby1_examples 16_target_shuttle_publisher` | Publishes two hand poses in turn on `/rby1/right_arm/target_pose`, one every `period` seconds, for example 15 or a target executor to carry out. It only publishes, and logs the answers. `cycles:=1` for two targets |
+| `16_target_shuttle_publisher` | `ros2 run rby1_examples 16_target_shuttle_publisher` | Publishes two hand poses in turn on `/rby1/right_arm/target_pose`, one every `period` seconds, for example 15 or a target executor to carry out. It only publishes, and logs the answers, until Ctrl+C |
 
 ---
 
@@ -612,7 +612,7 @@ Everything that puts objects into the planning scene of a `move_group` on the sa
 |------|--------------|--------------|
 | `scene` | `ros2 run rby1_moveit_objects scene …`, `scene.launch.py` | Obstacles (box, sphere, cylinder): add, move, remove, list, load a YAML file of them |
 | `publish_objects` | `objects.launch.py` | Modules on robot links and fixtures in the world, from a YAML file, kept in the scene while it runs |
-| `object_at_point` | `point_object.launch.py` | One obstacle, put where the topic `/rby1/scene/object_point` says |
+| `object_at_point` | `point_object.launch.py` | One obstacle, put where the topic `/rby1/scene/object_point` says — or, with `pose_topic`, where a pose such as a marker's is |
 
 #### Obstacles: the `scene` command
 
@@ -722,6 +722,21 @@ rby1_object_at_point:
 - While `/apply_planning_scene` is not there, the node warns every 5 s. Of the points that arrive meanwhile the newest is kept and placed when `move_group` answers again.
 - A point that cannot be placed — not a number, or refused by `move_group` — is warned about and dropped.
 - The node does not take the object away when it ends, and does not put it back by itself when `move_group` restarts: the next point does.
+
+**Following a pose (a marker).** Two more parameters, in the same file:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `pose_topic` | `""` (none) | A `geometry_msgs/PoseStamped` topic, such as a marker's `/rby1/marker_7/pose`. The position of every pose is taken to `base` with TF, at the pose's stamp (waits up to 0.2 s for it), and the object is put there. The pose's orientation is not used; `offset` and `rpy` then count in `base`. For one run: `point_object.launch.py pose_topic:=/rby1/marker_7/pose` |
+| `min_move` | `0.01` m | A pose moves the object only when it is further than this from where the last pose put it; `0.0`: every change. Each move of the object is a change of the planning scene, and a marker's pose shakes a little in every image |
+
+| `remove_after` | `0.0` s | When no pose came for this long — the marker is out of sight or hidden — the object is taken out of the scene; the next pose puts it back. `0.0`: never, it stays where the marker was last seen |
+
+- The point topic keeps working beside it. Only the newest pose is kept, as with points.
+- `remove_after` counts from the last pose whose place in `base` was known. Simulator: with `remove_after:=2.0` a box placed from a pose topic was gone from the scene 2.0 s after the poses stopped (one run).
+- Without the TF from the pose's frame to `base` — the robot's TF comes from a planner's launch, the camera's mounting from the camera launch — the node warns every 5 s (`… where it is in base is unknown …`) and places nothing.
+- The planners are not told anything special: the object is an obstacle like one put with the `scene` command. `rby1_moveit_executor` sees it when it plans the next target; the cuMotion executor also while the arm moves. An object that appears on the arm, or right ahead of the moving hand, stops the cuMotion executor (`obstacle too close to plan around in time`), and with the arm then touching it every further target is refused until it is removed.
+- Simulator, with a made-up marker 7 (pose and TF published from its true place, no camera): `16_target_shuttle_publisher` for ten round trips with `period:=8.0` (it still had its `cycles` parameter then), the marker shown between the two points after two round trips while the hand rested at a point. The box was placed once, at the marker's place to the millimetre. With `rby1_moveit_executor` 20 of 20 targets `DONE`, the hand passing 4.1–4.3 cm from the box's centre before and 8.9–13.8 cm after; with the cuMotion executor 20 of 20, 3.0–3.5 cm before and 13.5–14.8 cm after. With the marker shown while the arm was passing, the cuMotion executor stopped and refused the 15 targets that followed, as described above. One run each; not run with a real camera.
 
 #### Source and tests
 
@@ -868,14 +883,13 @@ ros2 topic echo /rby1/right_arm/target_status std_msgs/msg/String
 
 The hand's pose comes from the driver's `get_cartesian_pose`, computed with the SDK's model, and a target is carried out as a pose of that model's tool frame. From v1.1 on it matches the URDF the planner uses; on v1.0 the `ee_*` tool frames of the two differ by 46 mm, so there the same target puts the hand 46 mm apart under this example and under a planner.
 
-**`16_target_shuttle_publisher`** — publishes two hand poses in turn on `target_topic`, `point_a` then `point_b`, one every `period` seconds, for `cycles` round trips. It only publishes: it does not wait for `DONE`, does not ask the driver where the hand is, and does not use TF. What moves the arm is whatever listens on the topic: `15_cartesian_target_move`, `rby1_moveit_executor`, or the cuMotion executor of the RB-Y1 Isaac ROS repository.
+**`16_target_shuttle_publisher`** — publishes two hand poses in turn on `target_topic`, `point_a` then `point_b`, one every `period` seconds, until Ctrl+C. It only publishes: it does not wait for `DONE`, does not ask the driver where the hand is, and does not use TF. What moves the arm is whatever listens on the topic: `15_cartesian_target_move`, `rby1_moveit_executor`, or the cuMotion executor of the RB-Y1 Isaac ROS repository.
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
 | `target_topic`, `status_topic` | `/rby1/right_arm/target_pose`, `/rby1/right_arm/target_status` | Where the targets go, and where the listener's answers are read. `/rby1/left_arm/…` for the left arm, with points on the left side |
-| `point_a`, `point_b` | `[0.413, -0.367, 1.116, -1.571, -1.071, 1.571]`, `[0.413, -0.367, 1.416, -1.571, -1.071, 1.571]`: the right hand at the ready pose, and 30 cm above it | x, y, z (m, `base`), roll, pitch, yaw (rad; the rotation is Rz(yaw) Ry(pitch) Rx(roll)) of the tool frame. Always six values, each written as a float (`1.0`, not `1`) |
+| `point_a`, `point_b` | `[0.413, -0.367, 1.0, -1.571, -1.071, 1.571]`, `[0.413, -0.367, 1.5, -1.571, -1.071, 1.571]`: 12 cm below the right hand at the ready pose (which is at z 1.116), and 50 cm above that | x, y, z (m, `base`), roll, pitch, yaw (rad; the rotation is Rz(yaw) Ry(pitch) Rx(roll)) of the tool frame. Always six values, each written as a float (`1.0`, not `1`) |
 | `period` | `5.0` | Seconds from one target to the next. Must be longer than a move takes |
-| `cycles` | `3` | Round trips. `0`: until Ctrl+C |
 
 - Before the first target it waits until something listens on `target_topic`. After 15 s without a listener it ends with a message naming what to start.
 - It logs every line it hears on `status_topic` (`EXECUTING …`, `DONE`, `FAILED: …`) under the target it sent, and does not act on them: after a `FAILED` the next target still goes out.
