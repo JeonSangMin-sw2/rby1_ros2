@@ -67,7 +67,25 @@ ros2 pkg list | grep moveit
 ```bash
 sudo apt install ros-humble-gripper-controllers
 sudo apt install ros-humble-joint-trajectory-controller
+
+# camera publisher (rby1_additional_tools)
+sudo apt install ros-humble-cv-bridge libopencv-dev
 ```
+
+For an Intel RealSense (optional; a webcam does not need it):
+
+```bash
+sudo apt install ros-humble-librealsense2
+
+# lets a normal user open the camera (the ROS package does not bring these rules)
+sudo curl -sSL https://raw.githubusercontent.com/IntelRealSense/librealsense/v2.56.5/config/99-realsense-libusb.rules \
+     -o /etc/udev/rules.d/99-realsense-libusb.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Install it before [1-9. Build](#1-9-build). Installed later, build the package again:
+`colcon build --symlink-install --packages-select rby1_additional_tools`. Without it the RealSense node is
+left out of the build and the rest still works.
 
 ### 1-6. Install Nav2(optional)
 
