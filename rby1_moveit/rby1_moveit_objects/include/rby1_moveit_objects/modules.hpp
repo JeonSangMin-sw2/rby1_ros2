@@ -8,6 +8,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,13 +19,27 @@
 
 namespace rby1_moveit_objects {
 
+// A module that moves with one joint of a sensor_msgs/JointState topic -- a gripper finger
+// of rby1_additional_tools' virtual_gripper: its xyz shifts by axis * the joint's position.
+struct Follow {
+  std::string topic;
+  std::string joint;
+  std::array<double, 3> axis{0.0, 0.0, 0.0};
+  double initial = 0.0;  // the position until the topic gives one
+};
+
 struct Module {
   ObjectSpec spec;   // name, frame, xyz, rpy; type box/sphere/cylinder/mesh
   std::string mesh;  // resolved URI for type mesh: file://..., package://...
   std::array<double, 3> scale{1.0, 1.0, 1.0};
   bool attach = true;
   std::vector<std::string> touch_links;  // attached: links it may touch; default its own link
+  std::optional<Follow> follows;         // `follows:` -- xyz is then the pose at position 0
 };
+
+// `module` where its joint is at `position`: xyz + follows.axis * position. A module
+// that follows nothing comes back as it is.
+Module at_position(const Module & module, double position);
 
 // The `objects:` list of a YAML file. A relative mesh path is taken from the file's
 // folder. std::invalid_argument naming the file and entry otherwise.

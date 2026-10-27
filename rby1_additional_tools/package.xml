@@ -3,7 +3,7 @@
 <package format="3">
   <name>rby1_additional_tools</name>
   <version>0.0.0</version>
-  <description>Host-side tools around the RB-Y1 driver: camera images as ROS topics (for Isaac ROS AprilTag in the container)</description>
+  <description>Host-side tools around the RB-Y1 driver: camera images as ROS topics (for Isaac ROS AprilTag in the container), and a virtual gripper</description>
   <maintainer email="sangmin.jeon@rainbow-robotics.com">jsm</maintainer>
   <license>TODO: License declaration</license>
 
@@ -15,6 +15,7 @@
   <depend>yaml-cpp</depend>
   <depend>libopencv-dev</depend>
   <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>eigen</depend>
   <depend>librealsense2</depend>

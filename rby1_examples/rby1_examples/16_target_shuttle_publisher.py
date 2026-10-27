@@ -38,17 +38,18 @@ Run:
   ros2 run rby1_examples 16_target_shuttle_publisher
   ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0
   ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
-      -p "point_a:=[0.413,-0.367,1.116,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.167,1.216,-1.571,-1.071,1.571]"
+      -p "point_a:=[0.413,-0.367,1.034,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.167,1.134,-1.571,-1.071,1.571]"
   The left arm: both topics, and points on the left side
   ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
       -p target_topic:=/rby1/left_arm/target_pose -p status_topic:=/rby1/left_arm/target_status \
-      -p "point_a:=[0.413,0.367,1.116,1.571,-1.071,-1.571]" -p "point_b:=[0.413,0.367,1.416,1.571,-1.071,-1.571]"
+      -p "point_a:=[0.413,0.367,1.034,1.571,-1.071,-1.571]" -p "point_b:=[0.413,0.367,1.334,1.571,-1.071,-1.571]"
 
 Parameters (defaults):
   target_topic  /rby1/right_arm/target_pose    where the targets go
   status_topic  /rby1/right_arm/target_status  the listener's answers, logged
-  point_a       [0.413, -0.367, 1.0, -1.571, -1.071, 1.571]     12 cm below the right hand at the ready pose
-  point_b       [0.413, -0.367, 1.5, -1.571, -1.071, 1.571]     50 cm above point_a
+  point_a       [0.413, -0.2, 0.918, -1.571, -1.071, 1.571]     12 cm below and 17 cm inward of the
+                                                                right hand at the ready pose
+  point_b       [0.413, -0.2, 1.418, -1.571, -1.071, 1.571]     50 cm above point_a
   period        5.0 s                          from one target to the next: longer than a move takes
 A point is always 6 values. Write every value as a float (1.0, not 1).
 
@@ -69,8 +70,8 @@ WAIT_TIMEOUT = 15.0  # s to wait for something to listen on the target topic
 # Defaults of the parameters of the same name; the table above describes them.
 TARGET_TOPIC = '/rby1/right_arm/target_pose'
 STATUS_TOPIC = '/rby1/right_arm/target_status'
-POINT_A = [0.413, -0.2, 1.0, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
-POINT_B = [0.413, -0.2, 1.5, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
+POINT_A = [0.413, -0.2, 0.918, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
+POINT_B = [0.413, -0.2, 1.418, -1.571, -1.071, 1.571]  # x, y, z (m), roll, pitch, yaw (rad)
 PERIOD = 5.0                                             # s
 
 

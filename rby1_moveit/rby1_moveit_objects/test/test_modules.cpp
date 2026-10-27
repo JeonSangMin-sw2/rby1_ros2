@@ -62,8 +62,8 @@ TEST(Modules, AttachedGoOnTheirLinkWorldOnesIntoTheWorld) {
   const auto & tool = diff.robot_state.attached_collision_objects[1];
   EXPECT_EQ(tool.link_name, "ee_right");
   EXPECT_EQ(tool.object.id, "tool_tip");
-  EXPECT_EQ(tool.touch_links, (std::vector<std::string>{"ee_right", "gripper_right", "gripper_finger_r1",
-                                                       "gripper_finger_r2", "link_right_arm_6"}));
+  EXPECT_EQ(tool.touch_links, (std::vector<std::string>{"ee_right", "link_right_arm_6", "gripper_right_body",
+                                                       "gripper_right_finger_1", "gripper_right_finger_2"}));
   EXPECT_EQ(diff.robot_state.attached_collision_objects[0].touch_links,
             std::vector<std::string>{"link_head_2"});  // default: its own link
   EXPECT_EQ(diff.world.collision_objects[0].id, "workbench");
@@ -90,7 +90,35 @@ TEST(Modules, MissingOnesAreFound) {
   EXPECT_EQ(missing(modules, scene), std::vector<std::string>{"tool_tip"});
 }
 
+TEST(Modules, TheGripperFingersFollowTheirJoint) {
+  const auto modules = modules_from_file(GRIPPER_OBJECTS);
+  ASSERT_EQ(modules.size(), 6u);
+  const auto & finger = modules[1];
+  ASSERT_TRUE(finger.follows);
+  EXPECT_EQ(finger.spec.name, "gripper_right_finger_1");
+  EXPECT_EQ(finger.follows->topic, "/rby1/right_gripper/state");
+  EXPECT_EQ(finger.follows->joint, "gripper_finger_r1");
+  EXPECT_FALSE(modules[0].follows);  // the body does not move
+  // Fully open: where the URDF had the finger at the end of its travel (0.003 + 0.05).
+  EXPECT_NEAR(at_position(finger, finger.follows->initial).spec.xyz[0], 0.053, 1e-12);
+  EXPECT_NEAR(at_position(finger, 0.0).spec.xyz[0], 0.003, 1e-12);       // closed
+  EXPECT_NEAR(at_position(modules[2], 0.02).spec.xyz[0], -0.023, 1e-12);  // the other finger, the other way
+  EXPECT_EQ(at_position(modules[0], 0.02).spec.xyz, modules[0].spec.xyz);
+  // Each part may touch the others and the wrist, nothing else.
+  for (const auto & part : modules) {
+    for (const auto & link : part.touch_links) {
+      EXPECT_EQ(link.find("gripper_finger"), std::string::npos) << part.spec.name << ": " << link;
+    }
+  }
+}
+
 TEST(Modules, BadEntriesSayWhatIsWrong) {
+  EXPECT_NE(failure("objects:\n  - {name: a, frame: ee_right, type: sphere, radius: 0.1, follows: {topic: t}}\n")
+              .find("follows needs"), std::string::npos);
+  EXPECT_NE(failure("objects:\n  - {name: a, frame: ee_right, type: sphere, radius: 0.1,\n"
+                    "     follows: {topic: t, joint: j, axis: [0, 0, 0]}}\n").find("not all 0"), std::string::npos);
+  EXPECT_NE(failure("objects:\n  - {name: a, frame: base, attach: false, type: sphere, radius: 0.1,\n"
+                    "     follows: {topic: t, joint: j, axis: [1, 0, 0]}}\n").find("attached"), std::string::npos);
   EXPECT_NE(failure("objects: []\n").find("non-empty"), std::string::npos);
   EXPECT_NE(failure("objects:\n  - {name: a, type: box, size: [1, 1, 1]}\n").find("needs frame"), std::string::npos);
   EXPECT_NE(failure("objects:\n  - {name: a, frame: base, type: mesh}\n").find("needs mesh"), std::string::npos);

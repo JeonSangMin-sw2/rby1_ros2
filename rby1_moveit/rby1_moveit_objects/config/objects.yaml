@@ -28,14 +28,14 @@ objects:
     mesh: meshes/camera_box.stl
 
   - name: tool_tip               # a 12 cm rod held in the right gripper (ee_right's -z points away from the wrist);
-                                 # it passes through the gripper, so the gripper links may touch it
+                                 # it passes through the gripper, so the gripper's modules (gripper.yaml) may touch it
     frame: ee_right
     attach: true
     xyz: [0.0, 0.0, -0.06]
     type: cylinder
     radius: 0.012
     height: 0.12
-    touch_links: [ee_right, gripper_right, gripper_finger_r1, gripper_finger_r2, link_right_arm_6]
+    touch_links: [ee_right, link_right_arm_6, gripper_right_body, gripper_right_finger_1, gripper_right_finger_2]
 
   - name: workbench              # a fixed table in front of the robot
     frame: base

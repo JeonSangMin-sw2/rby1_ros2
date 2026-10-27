@@ -75,6 +75,22 @@ std::vector<Module> modules_from_file(const std::string & path) {
         if (!entry["mesh"]) throw std::invalid_argument("a mesh needs mesh: <file>");
         module.mesh = resolve(entry["mesh"].as<std::string>(), folder);
       }
+      if (const auto follows = entry["follows"]) {
+        Follow follow;
+        if (!follows["topic"] || !follows["joint"] || !follows["axis"]) {
+          throw std::invalid_argument("follows needs topic, joint and axis");
+        }
+        follow.topic = follows["topic"].as<std::string>();
+        follow.joint = follows["joint"].as<std::string>();
+        const auto axis = numbers(follows["axis"], "follows: axis");
+        if (axis.size() != 3 || std::all_of(axis.begin(), axis.end(), [](double v) { return v == 0.0; })) {
+          throw std::invalid_argument("follows: axis needs 3 values, not all 0");
+        }
+        follow.axis = {axis[0], axis[1], axis[2]};
+        if (follows["initial"]) follow.initial = follows["initial"].as<double>();
+        if (!module.attach) throw std::invalid_argument("follows is for attached modules (attach: true)");
+        module.follows = follow;
+      }
       if (spec.name.empty()) throw std::invalid_argument("every object needs a name");
       if (!names.insert(spec.name).second) throw std::invalid_argument("the name is used twice");
       if (module.touch_links.empty()) module.touch_links = {spec.frame};
@@ -87,6 +103,13 @@ std::vector<Module> modules_from_file(const std::string & path) {
     modules.push_back(module);
   }
   return modules;
+}
+
+Module at_position(const Module & module, double position) {
+  if (!module.follows) return module;
+  Module moved = module;
+  for (size_t i = 0; i < 3; ++i) moved.spec.xyz[i] += module.follows->axis[i] * position;
+  return moved;
 }
 
 CollisionObject collision_object(const Module & module) {

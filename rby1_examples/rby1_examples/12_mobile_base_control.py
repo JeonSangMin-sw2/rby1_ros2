@@ -45,7 +45,7 @@ from rby1_msgs.srv import StateOnOff
 # Values to change: edit these to adjust the example.
 # The stream channels this example commands: the base by cmd_vel, and -- with a stream open, the
 # upper-body joint command goes out on streams too -- the arms, torso and head.
-STREAM_CHANNELS = 'mobile, arm, torso, head'
+STREAM_CHANNELS = 'mobile, right_arm, left_arm, torso, head'
 # Upper-body pose, sent before the base moves
 ZERO_TORSO = [0.0] * 6        # rad, torso_0 .. torso_5
 ZERO_RIGHT_ARM = [0.0] * 7    # rad

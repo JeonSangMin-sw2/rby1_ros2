@@ -7,10 +7,10 @@ streams torso, arms, and head joint positions via StreamJoint action,
 and concurrently publishes velocity commands to /cmd_vel to move the mobile base.
 
 Stream channels: stream_control opens the channels named in its `parameters` --
-arm (both arms), torso, head, mobile; empty or "all" is every one. This example
-commands all four, so it opens all four (STREAM_CHANNELS). A command for a part
-whose channel is closed is refused, and the driver's answer says which channels it
-opened. With no stream command for 60 s the driver closes every channel by itself.
+right_arm, left_arm, torso, head, mobile; empty or "all" is every one. This example commands them all, so it opens them all (STREAM_CHANNELS). A
+command for a part whose channel is closed is refused, and the driver's answer says
+which channels it opened. A channel nobody commands within 60 s of opening it is
+closed again by the driver.
 
 Run:
   ros2 run rby1_examples 13_stream_command
@@ -27,7 +27,7 @@ from geometry_msgs.msg import Twist
 
 # Values to change: edit these to adjust the example.
 # The stream channels this example commands: the arms, torso and head by stream_joint, the base by cmd_vel.
-STREAM_CHANNELS = 'arm, torso, head, mobile'
+STREAM_CHANNELS = 'right_arm, left_arm, torso, head, mobile'
 STREAM_HZ = 30.0                                         # Hz, joint commands streamed per second
 # Zero pose: the robot is moved there first, and the stream goes between it and the ready pose
 ZERO_TORSO = [0.0] * 6                                   # rad, torso_0 .. torso_5

@@ -73,6 +73,9 @@ The values an example uses — postures, times, speeds, priorities, how long it 
 
 You can use the robot's basic TF structure and state publisher through the commands below. When implementing features related to rby1, please use the model files from the corresponding package.
 
+- The models end at the tool frames `ee_right` / `ee_left`: since 2026-10-16 the URDFs have no gripper links or finger joints. The gripper is given as planning-scene modules (`rby1_moveit_objects`, `config/gripper.yaml`); its meshes stay in `meshes/`.
+- The root link is `base`, on the floor (the SDK's wheel radius equals the axles' height: M 0.076 m, A 0.1 m). The driver's launch joins it to the odometry: the driver publishes `odom → base_footprint`, and the launch adds `base_footprint → base` by the `model` of `config/driver_parameters.yaml` — M (mecanum): the same frame; A (differential drive): `base` 0.228 m behind `base_footprint`, which is the middle of the wheel axle (the SDK model's `<mobile xyz="0.228 0 0">`).
+
 - **Parameters**:
   - `model_name` : `rby1a`, `rby1m`
   - `model_version`
@@ -183,8 +186,6 @@ Each MoveIt package spawns the following controllers:
 | `left_arm_controller` | `JointTrajectoryController` | left_arm_0 ~ ee_left |
 | `torso_controller` | `JointTrajectoryController` | base ~ torso_5 |
 | `head_controller` | `JointTrajectoryController` | head_0, head_1 |
-| `gripper_r_controller` | `GripperActionController` | gripper_finger_r1_joint |
-| `gripper_l_controller` | `GripperActionController` | gripper_finger_l1_joint |
 | `both_arms_controller` | `JointTrajectoryController` | All arm joints (left + right) |
 | `body_controller` | `JointTrajectoryController` | Torso + Head + Both Arms |
 
@@ -214,7 +215,7 @@ The RBY1 ROS 2 package supports both direct control (via stand-alone services, a
 | `rby1_moveit_m_1_3` | MoveIt 2 configuration package for **Model M v1.3**. |
 | `rby1_moveit_executor` | Target executor: plans with MoveIt (OMPL) to a 4x4 tool pose target and executes through the driver's `follow_joint_trajectory` action. C++. |
 | `rby1_moveit_objects` | Objects in the MoveIt planning scene: the `scene` command (obstacles: add, move, remove, load a file), modules on robot links and fixtures in the world from a YAML file, kept in the scene while it runs, and one obstacle kept where a point topic says. C++, with a library. |
-| `rby1_additional_tools` | Camera publishers (webcam through OpenCV, Intel RealSense through librealsense) and the camera mount on TF. C++. |
+| `rby1_additional_tools` | Camera publishers (webcam through OpenCV, Intel RealSense through librealsense) and the camera mount on TF; a virtual gripper (commands in, finger state out). C++. |
 
 #### Sequence & Architecture Flow (Mermaid Diagram)
 
@@ -273,14 +274,13 @@ graph TD
 |-----------|---------|------|-------------|
 | `robot_ip` | `"127.0.0.1:50051"` | - | Robot IP address and gRPC port |
 | `model` | `"m"` | - | Robot model — `"a"` (RBY1-A) or `"m"` (RBY1-M) |
-| `get_state_period` | `0.01` | s | State publish interval — default 0.01 (100 Hz) |
-| `minimum_time` | `2.0` | s | Default minimum execution time for motion commands |
-| `stream_hz` | `30.0` | Hz | Frequency for trajectory streaming |
-| `angular_velocity_limit` | `4.712388` | rad/s | Joint angular velocity limit |
-| `linear_velocity_limit` | `1.5` | m/s | Cartesian linear velocity limit |
-| `acceleration_limit` | `1.0` | - | Acceleration scaling factor |
-| `stop_orientation_tracking_error` | `1e-5` | rad | Orientation tracking error threshold to detect stop |
-| `stop_position_tracking_error` | `1e-5` | m | Position tracking error threshold to detect stop |
+| `stream_command_hz` | `30.0` | Hz | How often `cmd_vel` is expected: each `cmd_vel` is carried out for 1.1 of that period, so the base keeps moving between messages and stops soon after they end. Named `stream_hz` before 2026-10-26 |
+| `joint_position_command_cutoff_frequency` | `15.0` | Hz | Robot parameter `joint_position_command.cutoff_frequency`, written at connect: the joint position command filter. 15 is the robot's own default (read from the simulator 2026-10-26); the SDK's examples use 5. Until 2026-10-26 the driver wrote 4.712388 here (its angular velocity limit, by mistake) |
+| `cartesian_command_cutoff_frequency` | `15.0` | Hz | Robot parameter `cartesian_command.cutoff_frequency`, written at connect. 15 is the robot's own default; the SDK's examples use 5. Until 2026-10-26 the driver wrote 1.5 here (its linear velocity limit, by mistake) |
+| `default_acceleration_limit_scaling` | `1.0` | - | Robot parameter `default.acceleration_limit_scaling`, written at connect: scales every command's acceleration limits (0 to 1). 1.0 is the robot's default |
+| `default_velocity_limit_scaling` | `1.0` | - | Robot parameter `default.velocity_limit_scaling`, written at connect: scales every command's velocity limits (0 to 1). 1.0 is the robot's default |
+| `default_angular_acceleration_limit` | `10.0` | rad/s² | Robot parameter `default.angular_acceleration_limit`, written at connect: the Cartesian commands' angular acceleration limit. 10 is the robot's default |
+| `default_linear_acceleration_limit` | `20.0` | m/s² | Robot parameter `default.linear_acceleration_limit`, written at connect: the Cartesian commands' linear acceleration limit. 20 is the robot's default; until 2026-10-26 the driver wrote 1.0 here (its acceleration scaling, by mistake). The robot stores these four in its database, so a robot an older driver connected to keeps the old values until a driver with this file connects |
 | `se2_minimum_time` | `1.0` | s | Minimum execution time (interpolation ramp) for SE2 velocity commands |
 | `se2_linear_acceleration_limit` | `0.5` | m/s² | Linear acceleration limit for SE2 velocity commands |
 | `se2_angular_acceleration_limit` | `0.5` | rad/s² | Angular acceleration limit for SE2 velocity commands |
@@ -288,8 +288,8 @@ graph TD
 | `collision_threshold` | `0.02` | m | Minimum link-distance threshold for collision detection |
 | `publish_battery_state` | `true` | - | Enable battery state topic |
 | `publish_tool_flange_state` | `true` | - | Enable tool flange state topics (left + right) |
-| `state_loss_timeout` | `1.0` | s | The driver stops only after state reads kept failing this long (a single failed read is retried) |
-| `fjt_start_velocity_scale` | `1.0` | - | `follow_joint_trajectory` is rejected when reaching its first waypoint in time would need more than this share of a joint's velocity limit |
+
+Fixed in the driver since 2026-10-26, no longer parameters: the state loop runs every 10 ms (100 Hz, the robot's state rate); a command that leaves `minimum_time` at zero gets 2.0 s; a Cartesian command that leaves its velocity limits or acceleration scaling at zero gets 1.5 m/s, 4.712388 rad/s and 1.0 (the values the message fields default to); the driver stops when state reads keep failing for 1.0 s (a single failed read is retried); `follow_joint_trajectory` is rejected when reaching its first waypoint in time would need more than a joint's velocity limit (the former `fjt_start_velocity_scale`, 1.0). The `stop_*_tracking_error` keys were read but never used — the `Rby1CartesianCommand` goal fields of the same names are what the driver applies. The `initialize_robot` / `power_on` / `servo_on` keys (automatic power and servo on at start) were removed as unused.
 
 ## Key Features
 
@@ -310,7 +310,7 @@ The driver checks the **target pose** for collisions *before* executing any join
 - **Joint commands**: uses the URDF-based dynamics model to evaluate the target joint configuration for link collisions.
 - **Cartesian commands**: solves the Inverse Kinematics via the built-in optimal control solver to obtain joint angles, then evaluates those angles for collisions.
 - If the predicted configuration is in collision (minimum distance below the threshold), the driver prints a warning log (`RCLCPP_WARN`) rather than aborting or rejecting the command, allowing safer manual intervention.
-- ⚠️ This check runs at the same rate as `get_state_period`. A slow period means the check fires less frequently.
+- ⚠️ This check runs with the state loop, every 10 ms.
 
 ## Topics 
 
@@ -355,7 +355,7 @@ The driver checks the **target pose** for collisions *before* executing any join
 | `cancel_control` | `std_srvs/Trigger` | Cancel all active motion commands immediately |
 | `get_cartesian_pose` | `rby1_msgs/GetCartesianPose` | Query Cartesian transform between two links |
 | `control_manager_command` | `rby1_msgs/ControlManagerCommand` | Send `CMD_ENABLE` / `CMD_DISABLE` / `CMD_RESET` to the Control Manager |
-| `stream_control` | `rby1_msgs/StateOnOff` | Open (`state=true`) or close (`state=false`) the stream channels named in `parameters`: `arm`, `torso`, `mobile`, `head`, separated by commas; empty or `all` is every channel. See [Command Streams](#command-streams) |
+| `stream_control` | `rby1_msgs/StateOnOff` | Open (`state=true`) or close (`state=false`) the stream channels named in `parameters`: `right_arm`, `left_arm`, `torso`, `mobile`, `head`, separated by commas; empty or `all` is every channel. See [Command Streams](#command-streams) |
 | `hardware_control` | `rby1_msgs/StateOnOff` | Claim (`state=true`) or release (`state=false`) hardware control rights for direct controller managers |
 | `set_trajectory_impedance` | `rby1_msgs/SetTrajectoryImpedance` | Switch joint impedance on or off per body part (torso, right arm, left arm) for `follow_joint_trajectory` and `stream_joint` |
 
@@ -375,10 +375,10 @@ The driver checks the **target pose** for collisions *before* executing any join
 > - The current stream open/close state is reflected in the `robot_state` topic as `robot_stream_state` (`bool`): `true` while any channel is open. Which channels are open is in the answer of `stream_control`.
 
 > [!WARNING]
-> **An open stream closes by itself after 60 s without a command.**
-> - With any channel open and no stream command (`stream_joint`, `stream_cartesian`, `cmd_vel`, a trajectory waypoint) for 60 s, the driver closes **every** channel and logs `[STREAM TIMEOUT]`. The clock is shared: a command on any channel restarts it.
-> - A command sent after that is refused (`Stream is not active`) until `stream_control` opens the channel again. A client that pauses longer than 60 s must open it again, or keep sending the pose it holds.
-> - Until then the robot holds its last command. A client that stopped without closing its channels leaves them open for up to 60 s.
+> **A channel nobody commands within 60 s of opening it closes by itself.**
+> - A channel that got no command (`stream_joint`, `stream_cartesian`, `cmd_vel`, `robot_joint` / `robot_cartesian` under the stream, a trajectory waypoint) within 60 s of `stream_control` opening it is closed again, alone, with `[STREAM TIMEOUT]`: its client went away before it sent anything. The other channels are not touched.
+> - A channel that was commanded once stays open until `stream_control` closes it (or `cancel_control`, a fault, power or servo off): its last command holds its part (control hold time 1e6), so a client that pauses for long between commands keeps its stream. Before 2026-10-26 one shared clock closed every channel 60 s after the last command on any of them.
+> - A command on a closed channel is refused (`stream channel '…' is not open: open it with stream_control …`) until `stream_control` opens it again.
 
 > [!WARNING]
 > **Behavior of `robot_joint` and `robot_cartesian` Actions under Active Stream:**
@@ -389,7 +389,7 @@ The driver checks the **target pose** for collisions *before* executing any join
 > **Joint/Cartesian Action Behavior Characteristics When Persistence Stream is Enabled:**
 > - When `robot_joint` and `robot_cartesian` action commands are sent while the persistence stream is turned on, those commands are transmitted through the stream channel.
 > - In this case, it **returns immediately** without waiting for the robot to reach the target position; therefore, the client side must monitor whether the target has been reached via a separate joint status topic.
-> - With any channel open, a command for a part whose channel is closed is refused (`Stream: stream channel 'arm' is not open …`): open that channel too, or close the stream.
+> - With any channel open, a command for a part whose channel is closed is refused (`stream channel 'right_arm' is not open …`): open that channel too, or close the stream.
 >
 > ⚙️ = controlled by the corresponding flag in `driver_parameters.yaml`
 
@@ -512,22 +512,43 @@ The `RobotState.control_manager_state` field (and the `robot_state` topic) uses 
 
 ## Command Streams
 
-- **Four channels**: `stream_control` opens and closes them by name in `parameters` — `arm` (both arms), `torso`, `mobile`, `head`; empty or `all` is every channel. Each is its own SDK command stream, so one keeps going while another is commanded: head commands during an arm trajectory, the torso during an arm stream.
+Continuous control (`stream_joint`, `stream_cartesian`, `cmd_vel`, `follow_joint_trajectory`) goes over the driver's
+command streams. There are five channels, one per part, opened and closed by name with the `stream_control` service:
+`right_arm`, `left_arm`, `torso`, `mobile`, `head`, separated by commas. Name the ones you mean, both arms as
+`right_arm, left_arm`; nothing (or `all`) means every channel, when opening and when closing.
+Open the channels of the parts you will command before you send; a command for a part whose channel is closed is
+refused, and the answer names the channel to open. Opening a channel holds its part where it is; a channel nobody
+commands within 60 s of opening it is closed again. With any channel open, `robot_joint` and `robot_cartesian` go out
+on the channels too and return at once (check arrival on `joint_states`). The whole picture — what the answers say,
+cancelling, how the arms and the head run side by side — is below.
+
+```bash
+ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: true, parameters: 'right_arm, left_arm, head'}"
+ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: true}"                          # every channel
+ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: false, parameters: 'head'}"     # the arm channels stay open
+ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: false}"                         # every channel
+```
+
+- **Five channels**: `stream_control` opens and closes them by name in `parameters` — `right_arm`, `left_arm`, `torso`, `mobile`, `head`; empty or `all` is every channel, when opening and when closing. Each is its own SDK command stream, so one keeps going while another is commanded: head commands during an arm trajectory, the torso during an arm stream, one arm while the other moves. (Before 2026-10-26 both arms shared one channel named `arm`; that name and `arms` are not taken any more — name each arm.)
 
   ```bash
-  ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: true, parameters: 'arm, head'}"
-  ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: false, parameters: 'head'}"   # the arm channel stays open
+  ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: true, parameters: 'right_arm, left_arm, head'}"
+  ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: false, parameters: 'head'}"   # the arm channels stay open
   ros2 service call /rby1/stream_control rby1_msgs/srv/StateOnOff "{state: false}"                       # every channel
   ```
-- **Both arms share one channel**: every channel is one more command the driver sends each cycle (in the simulator, from Python, about 4 ms per send), so the arms are not split further. An arm the channel carries and a trajectory does not name is held at its start posture.
-- **What the answer says**: opening returns `Stream channels opened: arm; already open: head.` — channels that were open stay as they are. A channel that cannot be opened (its servo is off) makes the call fail and opens nothing. Closing returns `Stream channels closed: head. Still open: arm.`
-- **One arm's servo on**: the `arm` channel then carries that arm only, and the answer says so (`arm carries the right arm only`). A command for the other arm is refused until its servo is on and the channel is opened again.
-- **A command needs its channel**: with any channel open, a command for a part whose channel is closed is refused — `follow_joint_trajectory` (`Stream channel 'torso' is not open …`), `robot_joint` / `robot_cartesian`, `stream_joint` / `stream_cartesian`, `cmd_vel`. A trajectory uses the channels of the parts it names: an arm trajectory needs `arm` only and does not command the torso.
-- **Opening right after closing**: a stream opened within about 0.1 s of closing one takes commands without an error and the robot does not move. `stream_control` therefore waits until 0.3 s have passed since a stream was last closed before it opens one.
-- **Closes by itself after 60 s**: see the warning under [Services](#services) — every channel, when no stream command came on any of them for 60 s.
-- **New parts on the arm channel**: the robot only moves the parts earlier stream commands named, so the driver opens a new stream when a command names new parts (for example the left arm after the right). It does not cut short a command that is still moving: a `robot_joint` / `robot_cartesian` command waits for it up to 0.5 s, a `stream_joint` / `stream_cartesian` command is refused (`[STREAM REJECTED] … still moving other parts`).
-- **`follow_joint_trajectory` start check**: if a joint would have to exceed its velocity limit (× `fjt_start_velocity_scale`) to reach the first waypoint in time, the goal is rejected — and a trajectory it was sent to replace is stopped. A stream that expired while sending is reopened once; if three waypoints in a row cannot be sent — also when its channel was closed under it — the goal is aborted instead of reported as done.
-- **Long commands under the stream**: with the stream on, a `robot_joint` / `robot_cartesian` command is not cut off by the 60 s idle closing while it waits for its own `minimum_time`.
+- **One SDK round trip per cycle, not one per channel**: each command on a stream is one SDK round trip (the driver waits for the robot's answer). The driver sends the body channels' commands of one cycle at the same time, so a cycle costs the longest of them: in the simulator, one channel took 3.9 ms (median of 10) and both arm channels together 3.9 ms (median of 500, 90th percentile 6.8 ms, worst 8.1 ms) — 2026-10-26, C++ driver. Both arms in one `robot_joint` started moving in the same `joint_states` message in 10 of 10 (the 10 ms a message is apart).
+- **Opening a channel holds its part**: the first command on a channel just opened is the driver's own — the part held where it is measured, with the control hold time 1e6 the stream's commands use (in joint impedance when `set_trajectory_impedance` switched the part to it). The `mobile` channel gets none. A client's first command then finds a stream that already carries the part.
+- **What the answer says**: opening returns `Stream channels opened: right_arm, left_arm; already open: head.` — channels that were open stay as they are. A channel that cannot be opened (its servo is off) makes the call fail and opens nothing: `Cannot open stream channel: left_arm (its servo is off); nothing was opened. Switch the servo on first.` Closing returns `Stream channels closed: head. Still open: right_arm, left_arm.`
+- **A command needs its channel, and the driver does not open one for it**: with any channel open, a command for a part whose channel is closed is refused and the answer names the channel to open — `follow_joint_trajectory` (`Stream channel 'torso' is not open: open it with stream_control (parameters: torso) and send the trajectory again.`), `robot_joint` / `robot_cartesian` (`Stream: stream channel 'right_arm' is not open: open it with …`), `stream_joint` / `stream_cartesian`, `cmd_vel`. A client opens the channels it will use before it sends (a head tracker on `head` alone leaves `right_arm` closed, so an arm command from another client is refused until that client opens `right_arm`). A trajectory uses the channels of the parts it names: a right-arm trajectory needs `right_arm` only. With no channel open at all, `robot_joint` / `robot_cartesian` are single commands as before, and the stream commands are refused (`Stream is not active`).
+- **Opening right after closing**: a stream opened within about 0.1 s of closing one takes commands without an error and the robot does not move. `stream_control` therefore waits until 0.3 s have passed since a stream was last closed before it opens one (measured 0.30 s).
+- **Cancelling a trajectory stops its own parts only**: a cancel of `follow_joint_trajectory` cancels the streams the trajectory is on (the arms', the torso's, the head's — the parts it names) and no other. A head tracker on `stream_joint` keeps running while an arm trajectory is cancelled (simulator 2026-10-26: 10 of 10). Before (2026-10-13) the cancel ended every stream of the robot: the head's stream then came up expired at every command and the head stood still (simulator: after 10 of 10 cancels; with the change the head kept its full sweep in 10 of 10, and the arm stops in the same 0.14–0.16 s).
+- **A cancelled or expired body stream is replaced 0.3 s later**: a cancelled stream is dead, and one opened at once in its place comes up expired as well (simulator 2026-10-26: 17 reopenings, one per waypoint, for 0.85 s after a cancel, before the fix). The driver marks it and the next command on that channel opens the new stream 0.3 s after the cancel, waiting for it if it comes sooner (one `Command stream 'right_arm' had ended (cancelled or expired); opened a new one` in the log). A stream found expired at a send is replaced the same way. So a trajectory sent right after a cancel is delayed at most 0.3 s and not cut.
+- **The head's stream comes back by itself**: cancelling a `robot_joint` / `robot_cartesian` goal still ends every stream. The head's is then opened again 0.3 s later, at the next head command, with one warning (`[head] Command stream had expired; opened a new one`); head commands in between are dropped. Opened at once, as before, it expired again at every command.
+- **Closes by itself only before its first command**: see the warning under [Services](#services) — a channel nobody commanded within 60 s of opening it; a commanded channel stays open.
+- **One part per body channel**: each arm channel and the torso's carry one part, so a command naming another arm goes on that arm's channel and nothing is reopened (simulator 2026-10-26: right and left one-arm commands in turn, 10 of 10, no reopening). The driver still does not cut short a command that is moving on a channel: a `robot_joint` / `robot_cartesian` command that needs the stream replaced (trajectory impedance switched) waits for it up to 0.5 s, a `stream_joint` / `stream_cartesian` command is refused (`[STREAM REJECTED] … still moving other parts`).
+- **`follow_joint_trajectory` start check**: if a joint would have to exceed its velocity limit to reach the first waypoint in time, the goal is rejected — and a trajectory it was sent to replace is stopped. If three waypoints in a row cannot be sent — also when its channel was closed under it — the goal is aborted instead of reported as done.
+- **Long commands under the stream**: a `robot_joint` / `robot_cartesian` command waits for its own `minimum_time`; nothing closes its channel meanwhile.
+- **The robot can end a `robot_cartesian` command early**: under the stream the driver waits `minimum_time` and does not get the robot's own end of the command. The robot sometimes ends a Cartesian command by itself well before that and the part stops short (simulator: 4 of 895 torso commands, after 0.03 to 1.97 s of 1 to 3 s, with or without `stop_*_tracking_error`; why is not known). A check for it is in the driver but switched off (commented out, marked `[early-end 1/4]` to `[4/4]` in `rby1_ros2_driver.cpp`): it did not come back in 600 later commands. Switched on, it watches the command's streams and, when one ends more than 0.1 s before `minimum_time`, aborts the goal with `success: false` and `finish_code` `kEndedEarly: …` (600 normal commands without a false alarm, 10 of 10 forced ends caught). The stream is finished then; close the channel and open it again before the next command on it.
 - **Stream rate**: `stream_joint` and `stream_cartesian` keep finished goals for 2 s, so a 50 Hz client stays at 50 Hz. The arm follows `stream_joint` about 0.1 s behind (simulator, 50 and 100 Hz, any `minimum_time` up to 0.05 s).
 - **`stream_cartesian`**: the driver solves the joints for each target itself (the SDK's QP IK, staying near the joints the arm has) and streams them. A step that needs more than a joint's acceleration limit within `minimum_time` is refused (`[STREAM REJECTED] … required acceleration … exceeds limit`) **and stops the arm**: the parts the command named are held where they are measured, instead of finishing their last command. The stream stays open. Stream small steps, from where the arm is. (Cancelling and closing the channel was tried for this and taken out: a stream opened soon after took commands the robot ignored, and after a few rounds the driver hung — see Troubleshooting.) Next to the straight-wrist singularity of the ready pose, a small hand step can still ask for a large wrist turn and be refused.
 
@@ -572,6 +593,144 @@ A target executor moves an arm's tool frame to a pose it is sent, around the obs
 
 Example `16_target_shuttle_publisher`, the marker-to-target node of the RB-Y1 Isaac ROS repository (`rby1_apriltag`, `marker_target.launch.py`) and the tools below only use this interface, so they work with any executor that implements it. `rby1_moveit_executor` is the one in this repository. An executor may offer more: one that watches the path while the arm moves reports `AVOIDING`, `WAITING`, `RESUMING` and `REPLACED` as well, and one with a tracking mode offers the `/rby1_target_executor/set_tracking` service (`std_srvs/SetBool`) to follow a stream of targets. `rby1_moveit_executor` has neither: it plans once per target. Example `15_cartesian_target_move` implements the interface too, as the simplest executor there can be: no planner and no planning scene — the driver takes the hand straight to each target, and nothing is checked for collisions. Only one executor may listen on an arm's `target_pose` at a time.
 
+### Step by step
+
+Try it in the simulator first. Each step is a separate terminal with `source install/setup.bash`, while the driver runs.
+
+**Step 1 — Start the planner.** It checks the robot, switches power and servos on, and takes whatever is straight to
+the ready pose — both arms (elbow 90 deg) and the torso (knee bent about 57 deg, chest level), together. **The robot moves**,
+on both sides. Then it shows `READY`. The ready pose is a file of joint angles,
+`rby1_moveit_executor/config/ready_pose.yaml`: edit it, or give a copy with `ready_pose:=/path/to/file.yaml`.
+
+```bash
+ros2 launch rby1_driver rby1_ros2_driver.launch.py
+ros2 launch rby1_moveit_executor moveit_executor.launch.py              # with RViz; rviz:=false without
+ros2 launch rby1_moveit_objects objects.launch.py config:=gripper.yaml  # optional: the gripper on both hands (step 5)
+```
+
+**Step 2 — Move to a target.** The publisher example sends two targets in turn, `period` (5 s) apart, until Ctrl+C:
+here the hand goes 5 cm forward and up, then back to where the ready pose has it, and so on. Stop it with Ctrl+C
+when you have seen enough. A point is x, y, z, roll, pitch, yaw —
+always six values; `-1.571, -1.071, 1.571` is how the right hand is turned at the ready pose. The example only
+publishes, so watch the planner's answers in another terminal.
+
+```bash
+ros2 topic echo /rby1/right_arm/target_status std_msgs/msg/String       # another terminal: the planner's answers
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
+    -p "point_a:=[0.463,-0.367,1.084,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.367,1.034,-1.571,-1.071,1.571]"
+```
+
+Each target is answered with `PLANNING`, `EXECUTING …` and `DONE`; the example logs the same lines under the target
+it sent. It does not wait for the hand: `period` must be longer than a move takes (`-p period:=8.0`). A target that
+arrives while the arm is still moving runs when that move ends.
+
+The left arm is moved the same way, with nothing restarted: give its two topics and points on its side.
+
+```bash
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
+    -p target_topic:=/rby1/left_arm/target_pose -p status_topic:=/rby1/left_arm/target_status \
+    -p "point_a:=[0.463,0.367,1.084,1.571,-1.071,-1.571]" -p "point_b:=[0.413,0.367,1.034,1.571,-1.071,-1.571]"
+```
+
+**Step 3 — Put obstacles in.** The `scene` command puts an obstacle in the planning scene while the planner runs
+(step 4 uses it); `scene list` shows what is in the scene, `scene clear` empties it, and `scene add sphere|cylinder`,
+`scene move` and `scene load <file>` are described in Dev_page.md.
+
+A prepared set of obstacles goes in with one launch: it loads a YAML file of them and ends, and they stay in the scene.
+The default file has a table, a post and a ball.
+
+```bash
+ros2 launch rby1_moveit_objects scene.launch.py                         # config/example_scene.yaml
+ros2 launch rby1_moveit_objects scene.launch.py config:=/path/to/my_scene.yaml
+ros2 run rby1_moveit_objects scene clear
+```
+
+An obstacle can also be kept where a topic says. `point_object.launch.py` starts a node that puts one object — a 6 cm
+box as shipped, described in `config/point_object.yaml` — at every point it receives on `/rby1/scene/object_point`
+(`geometry_msgs/PointStamped`; an empty `frame_id` means `base`), in place of where it was before.
+
+```bash
+ros2 launch rby1_moveit_objects point_object.launch.py                  # config/point_object.yaml
+ros2 topic pub --once /rby1/scene/object_point geometry_msgs/msg/PointStamped \
+    "{header: {frame_id: base}, point: {x: 0.413, y: -0.367, z: 1.184}}"
+ros2 run rby1_moveit_objects scene remove point_object                  # it stays in the scene until removed
+```
+
+The same node can follow a pose instead — a marker the camera sees. With `pose_topic` it takes the position of every
+`geometry_msgs/PoseStamped` on that topic to `base` with TF and puts the object there, so a marker held next to the
+robot becomes an obstacle the planner goes around. A pose within `min_move` (1 cm) of where the last one put the
+object is ignored: a marker's pose shakes a little in every image.
+
+```bash
+# the planner of step 1, the camera and the marker detector are running (/rby1/marker_7/pose is published)
+ros2 launch rby1_moveit_objects point_object.launch.py pose_topic:=/rby1/marker_7/pose
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0   # another terminal; Ctrl+C to end
+# show marker 7 between the two points while the hand rests at one of them: the next legs go around it
+ros2 run rby1_moveit_objects scene remove point_object                  # afterwards; stop the launch first
+```
+
+- A way around takes longer than the straight one (3–4.5 s here), hence `period:=8.0`.
+- MoveIt looks at the scene when it plans a leg; cuMotion also while the arm moves. Either way, an object that lands
+  **on the arm or right in front of the moving hand** cannot be gone around: cuMotion stops the arm, and every target
+  after that is refused (`obstacle already touches the arm`) until the object is removed or moved away.
+- The object stays where the marker was last seen, also when the marker goes out of sight. To have it removed after
+  a while without the marker, set `remove_after` (seconds) in `config/point_object.yaml`.
+- It needs the robot's TF (a planner's launch) and the camera's mounting TF; without them the node warns that it
+  does not know where the pose is in `base`.
+
+**Step 4 — Shuttle between two points, around an obstacle.** The hand goes back and forth between `point_a` (12 cm
+below and 17 cm inward of where the ready pose has it) and `point_b` (50 cm above `point_a`) until Ctrl+C; give your
+own as x, y, z, roll, pitch, yaw. Put a box where the hand passes between the two points (the hand swings about 10 cm
+forward on the way): with it in the scene, every leg is planned around it.
+
+```bash
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=10.0  # around the box a leg takes 5-8 s
+# another terminal, while the hand rests at one of the two points:
+ros2 run rby1_moveit_objects scene add box shuttle_box --xyz 0.515 -0.23 1.17 --size 0.06 0.06 0.06
+ros2 run rby1_moveit_objects scene remove shuttle_box                          # the legs are straight again
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args \
+    -p "point_a:=[0.413,-0.367,1.034,-1.571,-1.071,1.571]" -p "point_b:=[0.413,-0.167,1.134,-1.571,-1.071,1.571]"
+```
+
+Every target is answered `DONE` or `FAILED: <reason>` on `/rby1/right_arm/target_status`; the example logs the answers
+and sends the next target either way. It does not wait for `DONE` and does not check where the hand ended.
+
+**Step 5 — Put modules on the robot.** What is mounted on the robot is given in a YAML file — the frame (a link such
+as `ee_right`, or `base`), the pose, and a mesh file or a box, sphere or cylinder — and is planned with while the node
+runs; Ctrl+C takes it away. The default file has a camera on the head, a rod in the right hand and a workbench.
+
+```bash
+ros2 launch rby1_moveit_objects objects.launch.py                       # config/objects.yaml
+ros2 launch rby1_moveit_objects objects.launch.py config:=/path/to/my_objects.yaml
+ros2 run rby1_examples 16_target_shuttle_publisher                      # the rod is kept clear of things, too
+```
+
+The gripper is optional, and such a module too: `config/gripper.yaml`. The robot model ends at the tool frames, so
+without it the planner plans as if the hand ended there. Its fingers open and close with the virtual gripper's state
+(optional too) — a stand-in, since the driver does not drive the grippers; the fingers on the robot do not move.
+
+```bash
+ros2 launch rby1_moveit_objects objects.launch.py config:=gripper.yaml  # optional: the gripper on both hands, fully open
+ros2 launch rby1_additional_tools virtual_gripper.launch.py             # optional, another terminal
+ros2 topic pub --once /rby1/right_gripper/command std_msgs/msg/Float64 "{data: 0.0}"    # close: each finger's opening, m
+ros2 topic pub --once /rby1/right_gripper/command std_msgs/msg/Float64 "{data: 0.05}"   # fully open
+```
+
+**Step 6 — Use markers a camera sees.** The camera publisher gives the images and the camera's place on the robot. A
+marker detector is not part of this repository: any node works that publishes each marker as
+`/rby1/marker_<id>/pose` (`geometry_msgs/PoseStamped` in the camera's optical frame) and as TF `target_marker_<id>`.
+
+```bash
+ros2 launch rby1_additional_tools camera.launch.py                      # webcam, config/webcam.yaml
+ros2 launch rby1_additional_tools camera.launch.py camera:=realsense    # needs: sudo apt install ros-humble-librealsense2
+ros2 launch rby1_additional_tools camera.launch.py rviz:=true           # with RViz showing the image
+```
+
+The RB-Y1 Isaac ROS repository has such a detector (`rby1_apriltag`), and with it the two things that keep following a
+marker: `marker_target.launch.py` sends the point under a marker as targets on `/rby1/right_arm/target_pose` (marker 7)
+and `/rby1/left_arm/target_pose` (marker 8), so the planner started in step 1 moves the hand there, and
+`follow_head:=true` turns the head to keep the marker in the middle of the image.
+
 ### `rby1_moveit_executor`
 
 ```bash
@@ -579,14 +738,14 @@ ros2 launch rby1_moveit_executor moveit_executor.launch.py              # with R
 ```
 
 - **Robot**: the model and version come from the driver and pick `rby1_moveit_<model>_<version>` (`model:=m version:=1.2` names it).
-- **Start**: emergency stop and faults are checked, power and servos switched on, and what is straight is taken to the ready pose in one move — the robot moves, on both sides — then `READY`. The ready pose is read from `config/ready_pose.yaml` (parameters `ready.right_arm`, `ready.left_arm`, `ready.torso`; another file with `ready_pose:=/path/to/file.yaml`) and has no default in the code — the node stops if a part is missing or has the wrong number of joints. As shipped: each arm with its elbow bent 90 deg (`[0, ∓0.5, 0, -1.57, 0, 0, 0]`), the torso with its knee bent a little and the chest upright (`[0, 0.1, -0.2, 0.1, 0, 0]`, which lowers the hands 3 mm). An arm counts as straight with its elbow within `straight_elbow` (0.3 rad) of 0, the torso with its knee under half its ready angle (0.1 rad; a ready torso of all zeros is never moved); a part that is bent already is left as it is. `ready_if_straight:=false` skips this.
+- **Start**: emergency stop and faults are checked, power and servos switched on, and what is straight is taken to the ready pose in one move — the robot moves, on both sides — then `READY`. The ready pose is read from `config/ready_pose.yaml` (parameters `ready.right_arm`, `ready.left_arm`, `ready.torso`; another file with `ready_pose:=/path/to/file.yaml`) and has no default in the code — the node stops if a part is missing or has the wrong number of joints. As shipped: each arm with its elbow bent 90 deg (`[0, ∓0.5, 0, -1.57, 0, 0, 0]`), the torso with its knee bent about 57 deg and the chest level (`[0, 0.5, -1.0, 0.5, 0, 0]`, the same as the RB-Y1 Isaac ROS repository's; it lowers the chest and the hands 8.2 cm, straight down). An arm counts as straight with its elbow within `straight_elbow` (0.3 rad) of 0, the torso with its knee under half its ready angle (0.5 rad; a ready torso of all zeros is never moved); a part that is bent already is left as it is. `ready_if_straight:=false` skips this.
 - **Both arms**: the executor listens on both arms' topics and answers each arm on its own status topic. A target for one arm is planned in that arm's group, so the other arm stays where it is; targets for both arms are planned as one move in the group `both_arms`. After one arm's target the other arm's is waited for 0.1 s, so targets sent to both together go together. (Always planning both arms, with the arm without a target to end where it is, was tried: around a 6 cm box that arm swung away and back in 29 of 30 plans, by up to 1.57 rad.)
 - **Targets**: a target that arrives while a move runs is kept (the latest per arm) and planned when the move ends — both arms' in one move when both wait. A target the arm is already at (joints within 0.001 rad) is answered `DONE` without a move.
 - **Obstacles**: the planning scene is planned around when a target arrives. Nothing is checked while the arm moves.
 - **Small obstacles**: OMPL checks a path for collisions at states a fraction of the joint space apart (`longest_valid_segment_fraction`). With its default, 0.01, a path could cut through a 6 cm box between two checked states; MoveIt's own check of the result then refused it (`INVALID_MOTION_PLAN`, 5 of 26 plans in the simulator). The launch sets 0.002 for the arm groups and 0.0014 for `both_arms` (1 of 99 plans refused; planning takes 0.03–0.05 s instead of 0.02), and the executor plans a refused target again, up to 3 times in all (`MoveIt refused the path it planned … planning again`).
 - **Move time**: MoveIt's timing (`velocity_scaling`, default 0.5), at least `minimum_time` (2 s), or exactly `duration` when it is above 0. Changeable while running: `ros2 param set /rby1_target_executor duration 3.0`.
 - **Joint impedance**: `impedance:=true` (or `ros2 param set /rby1_target_executor impedance.enabled true`) follows trajectories in joint impedance, so the arm yields to contact — the arms with a target in that move; the other arm stays in position control. `impedance.stiffness` (500 N·m/rad), `impedance.damping_ratio` (1.0) and `impedance.torque_limit` (50 N·m) are handed to the driver's `set_trajectory_impedance` before the next move. In the simulator 100 N·m/rad with 10 N·m left the wrist up to 0.5 rad short of the target.
-- **Stream**: it opens the `arm` channel for a move and closes it afterwards — only if it opened it; a channel that was open already, and the other channels, stay as they are.
+- **Stream**: it opens both arm channels (`right_arm, left_arm`) for a move and closes them afterwards — only if it opened it; a channel that was open already, and the other channels, stay as they are.
 - **One planning stack per ROS domain**: the launch refuses to start next to another `move_group` (for example an `rby1_moveit_*` `demo.launch.py`).
 - **Arm shape**: a 7-joint arm reaches one hand pose in many shapes, some half a turn of a joint apart. For each target the executor asks MoveIt's IK (`compute_ik`) from the arm's posture — and, when that fails or turns a joint more than 1 rad, from 8 random postures too — takes the solution the arm turns least to reach (the smallest turn of the joint that turns most), and plans to those joints, not to the pose, which lets the planner end in any shape. It logs `joint goal: the arm turns at most … rad`. When IK finds no joints at all it plans to the pose as before (`IK found no joints … planning to the pose instead`): the planner reaches poses this IK does not, and the arm may then end in a far shape. Simulator, 10 hand moves of 1–7 cm: the joint that turned most turned 0.10 rad on average (worst 0.24); planning to the pose it was 1.6 rad (worst 3.8, a half turn in 4 of the 10).
 
@@ -681,13 +840,16 @@ objects:
     type: mesh                 # box (size) / sphere (radius) / cylinder (radius, height; along z) / mesh
     mesh: meshes/camera_box.stl   # relative to this YAML, absolute, file://..., or package://<package>/...
     scale: [1.0, 1.0, 1.0]
-    touch_links: [link_head_2] # (attached) robot links it may touch without that counting as a collision; default: its own link
+    touch_links: [link_head_2] # (attached) robot links -- or other modules -- it may touch without that counting as a collision; default: its own link
+    # follows: {topic: /rby1/right_gripper/state, joint: gripper_finger_r1, axis: [1.0, 0.0, 0.0], initial: 0.05}
+    #                          # (attached) moves with that joint of a sensor_msgs/JointState topic: xyz is the pose at
+    #                          # position 0, shifted by axis * position; `initial` until the topic gives one
 ```
 
 - Meshes are STL, DAE, OBJ and whatever else assimp reads. `config/objects.yaml` has a camera-shaped mesh on the head, a rod held in the right hand and a workbench in front.
 - An object that overlaps robot links — a tool that goes through the gripper — needs those links in `touch_links`. Without them MoveIt sees the present pose as a collision and refuses every target (`FAILURE (MoveIt error 99999)`).
 - An attached object is part of the arm for MoveIt (OMPL): it is checked against the scene and the robot.
-- `config/gripper.yaml` gives the RB-Y1 gripper as modules on `ee_right` and `ee_left` — the body and two fingers each, fully open, with the meshes and poses of the robot's URDF — for a planner whose arm model ends at the tool frame. MoveIt already has the gripper as robot links, so each module lists those links in `touch_links`. For another tool, copy the file and replace the parts.
+- `config/gripper.yaml` gives the RB-Y1 gripper as modules on `ee_right` and `ee_left` — the body and two fingers each, with the gripper's meshes at the poses the URDF had for them. The robot model has no gripper (since 2026-10-16 the URDFs of `rby1_description` end at the tool frames), so **without this file MoveIt and cuMotion plan as if the hand ended at `ee_right` / `ee_left`**. The parts of one gripper may touch each other and the wrist (`touch_links`). Each finger `follows` its joint on `/rby1/<hand>_gripper/state` — `virtual_gripper` of `rby1_additional_tools` publishes it — and stands fully open (5 cm) until a state comes. It is moved at most every `follow_period` (0.1 s), when it has moved more than `follow_tolerance` (1 mm), and wherever it comes to rest. For another tool, copy the file and replace the parts.
 
 #### An obstacle where a topic says: `object_at_point`
 
@@ -735,7 +897,7 @@ rby1_object_at_point:
 - The point topic keeps working beside it. Only the newest pose is kept, as with points.
 - `remove_after` counts from the last pose whose place in `base` was known. Simulator: with `remove_after:=2.0` a box placed from a pose topic was gone from the scene 2.0 s after the poses stopped (one run).
 - Without the TF from the pose's frame to `base` — the robot's TF comes from a planner's launch, the camera's mounting from the camera launch — the node warns every 5 s (`… where it is in base is unknown …`) and places nothing.
-- The planners are not told anything special: the object is an obstacle like one put with the `scene` command. `rby1_moveit_executor` sees it when it plans the next target; the cuMotion executor also while the arm moves. An object that appears on the arm, or right ahead of the moving hand, stops the cuMotion executor (`obstacle too close to plan around in time`), and with the arm then touching it every further target is refused until it is removed.
+- The planners are not told anything special: the object is an obstacle like one put with the `scene` command. `rby1_moveit_executor` sees it when it plans the next target; the cuMotion executor also while the arm moves (in its one-arm groups; with both arms, its default, when it plans). An object that appears on the arm, or right ahead of the moving hand, stops the cuMotion executor (`obstacle too close to plan around in time`), and with the arm then touching it every further target is refused until it is removed.
 - Simulator, with a made-up marker 7 (pose and TF published from its true place, no camera): `16_target_shuttle_publisher` for ten round trips with `period:=8.0` (it still had its `cycles` parameter then), the marker shown between the two points after two round trips while the hand rested at a point. The box was placed once, at the marker's place to the millimetre. With `rby1_moveit_executor` 20 of 20 targets `DONE`, the hand passing 4.1–4.3 cm from the box's centre before and 8.9–13.8 cm after; with the cuMotion executor 20 of 20, 3.0–3.5 cm before and 13.5–14.8 cm after. With the marker shown while the arm was passing, the cuMotion executor stopped and refused the 15 targets that followed, as described above. One run each; not run with a real camera.
 
 #### Source and tests
@@ -841,6 +1003,31 @@ A marker's position in robot frames is only as good as the camera mount (`camera
 
 Source: `src/camera_publisher.cpp` (OpenCV devices and files), `src/realsense_publisher.cpp` (librealsense streams, exposure, projector, calibration, depth and infrared static TF, frame rate warnings), `include/rby1_additional_tools/camera_model.hpp` and `src/camera_model.cpp` (kind of source, pinhole model, calibration files and scaling), `launch/camera.launch.py`, `config/`. Tests: `colcon test --packages-select rby1_additional_tools`.
 
+### `rby1_additional_tools` — virtual gripper
+
+The driver does not drive the grippers. `virtual_gripper` stands in for a gripper driver: it takes a command per hand and publishes the fingers moving there, so what follows a gripper's state — the finger modules of `rby1_moveit_objects`' `config/gripper.yaml` — can be used. Nothing on the robot moves.
+
+```bash
+ros2 launch rby1_additional_tools virtual_gripper.launch.py                  # config/virtual_gripper.yaml
+ros2 topic pub --once /rby1/right_gripper/command std_msgs/msg/Float64 "{data: 0.0}"   # close
+ros2 topic echo /rby1/right_gripper/state
+```
+
+| Topic | Type | Content |
+|-------|------|---------|
+| `/rby1/<hand>_gripper/command` (`right`, `left`) | `std_msgs/Float64` | Each finger's opening (m): 0 closed .. `max_opening` open. Outside that range: refused with a warning |
+| `/rby1/<hand>_gripper/state` | `sensor_msgs/JointState` | `gripper_finger_<r\|l>1` and `_2`, both at the opening (m) and its rate, at `rate` Hz, moving toward the command at `speed` |
+
+| Parameter | Default | Meaning |
+|-----------|---------|---------|
+| `hands` | `["right", "left"]` | The hands it serves |
+| `topic_prefix` | `/rby1` | Before `/<hand>_gripper/…` |
+| `max_opening`, `speed` | `0.05` m, `0.05` m/s | Each finger's travel and speed — the URDF's finger joint before the gripper left it |
+| `rate` | `50.0` Hz | State messages |
+| `initial_opening` | `0.05` m | Where the fingers are at start: open |
+
+Source: `src/virtual_gripper.cpp`; the step and the command check are in `include/rby1_additional_tools/virtual_gripper.hpp`, tested by `test/test_virtual_gripper.cpp`.
+
 ### Target examples (15, 16)
 
 Each example is one file, and every parameter is listed at its top.
@@ -865,7 +1052,7 @@ ros2 topic echo /rby1/right_arm/target_status std_msgs/msg/String
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
-| `mode` | `command` | `command`: one `robot_cartesian` goal, as in `08_cartesian_command`; the move takes `duration` s. `stream`: `stream_cartesian` steps at `rate` Hz on the `arm` stream channel, which the example opens for a move and closes after it, also on Ctrl+C |
+| `mode` | `command` | `command`: one `robot_cartesian` goal, as in `08_cartesian_command`; the move takes `duration` s. `stream`: `stream_cartesian` steps at `rate` Hz on that arm's stream channel (`right_arm` or `left_arm`), which the example opens for a move and closes after it, also on Ctrl+C |
 | `target_topic`, `status_topic` | `/rby1/right_arm/target_pose`, `/rby1/right_arm/target_status` | Where the targets come in and the answers go out. `/rby1/left_arm/…` for the left arm |
 | `target_link` | from `target_topic` | Tool frame: `ee_right` for a `…/right_arm/…` topic, `ee_left` for `…/left_arm/…`. Give it to name another |
 | `ref_link` | `base` | Frame of the targets |
@@ -888,13 +1075,13 @@ The hand's pose comes from the driver's `get_cartesian_pose`, computed with the 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
 | `target_topic`, `status_topic` | `/rby1/right_arm/target_pose`, `/rby1/right_arm/target_status` | Where the targets go, and where the listener's answers are read. `/rby1/left_arm/…` for the left arm, with points on the left side |
-| `point_a`, `point_b` | `[0.413, -0.367, 1.0, -1.571, -1.071, 1.571]`, `[0.413, -0.367, 1.5, -1.571, -1.071, 1.571]`: 12 cm below the right hand at the ready pose (which is at z 1.116), and 50 cm above that | x, y, z (m, `base`), roll, pitch, yaw (rad; the rotation is Rz(yaw) Ry(pitch) Rx(roll)) of the tool frame. Always six values, each written as a float (`1.0`, not `1`) |
+| `point_a`, `point_b` | `[0.413, -0.2, 0.918, -1.571, -1.071, 1.571]`, `[0.413, -0.2, 1.418, -1.571, -1.071, 1.571]`: 12 cm below and 17 cm inward of the right hand at the ready pose (which is at (0.413, -0.367, 1.031)), and 50 cm above that | x, y, z (m, `base`), roll, pitch, yaw (rad; the rotation is Rz(yaw) Ry(pitch) Rx(roll)) of the tool frame. Always six values, each written as a float (`1.0`, not `1`) |
 | `period` | `5.0` | Seconds from one target to the next. Must be longer than a move takes |
 
 - Before the first target it waits until something listens on `target_topic`. After 15 s without a listener it ends with a message naming what to start.
 - It logs every line it hears on `status_topic` (`EXECUTING …`, `DONE`, `FAILED: …`) under the target it sent, and does not act on them: after a `FAILED` the next target still goes out.
-- Nothing waits for the arm. What happens to a target that arrives while the arm is still moving is up to the listener: the cuMotion executor switches to it at once; `rby1_moveit_executor` and `15_cartesian_target_move` run it when the current move ends.
-- The left arm: `-p target_topic:=/rby1/left_arm/target_pose -p status_topic:=/rby1/left_arm/target_status -p "point_a:=[0.413,0.367,1.116,1.571,-1.071,-1.571]" -p "point_b:=[0.413,0.367,1.416,1.571,-1.071,-1.571]"`.
+- Nothing waits for the arm. What happens to a target that arrives while the arm is still moving is up to the listener: the cuMotion executor in a one-arm group switches to it at once; the cuMotion executor with both arms (its default), `rby1_moveit_executor` and `15_cartesian_target_move` run it when the current move ends.
+- The left arm: `-p target_topic:=/rby1/left_arm/target_pose -p status_topic:=/rby1/left_arm/target_status -p "point_a:=[0.413,0.367,1.034,1.571,-1.071,-1.571]" -p "point_b:=[0.413,0.367,1.334,1.571,-1.071,-1.571]"`.
 
 The earlier `16_target_shuttle` — it waited for `DONE` on every leg, checked with the driver that the hand ended within `tolerance` of the point, and with `mode:=markers` went between the points under two markers read from TF — is not an example any more.
 
@@ -902,19 +1089,40 @@ The earlier `16_target_shuttle` — it waited for `DONE` on every leg, checked w
 
 ---
 
+Two examples work with targets, the same ones the MoveIt planner above takes:
+
+| Example | What it does |
+|---|---|
+| `16_target_shuttle_publisher` | Publishes targets: two hand poses in turn, one every few seconds, for whatever listens on the target topic — the planner, or example 15. It only publishes |
+| `15_cartesian_target_move` | The simplest target executor: takes targets from the same topic and moves the hand with the driver alone (one Cartesian command, or a stream of them) — no planner, nothing is checked for collisions |
+
+**Without a planner — `15_cartesian_target_move`.** This example is a target executor too: it takes the same targets
+from the same topic and answers on the same status topic. But it has no planner: the driver solves for the arm and
+takes the hand straight to each target, and **nothing is checked for collisions**. It needs the driver only, with the
+robot powered, its servos on and the arm bent. The planner's launch leaves the robot so, but **stop that launch
+(Ctrl+C) before starting the example**: two executors on one topic would both move the arm, and the example refuses to
+run while the target topic already has a subscriber.
+
+```bash
+ros2 run rby1_examples 15_cartesian_target_move                              # shows READY, then serves targets until Ctrl+C
+ros2 run rby1_examples 16_target_shuttle_publisher                           # another terminal: two points 50 cm apart, in turn
+ros2 topic echo /rby1/right_arm/target_status std_msgs/msg/String            # a third terminal: EXECUTING …, DONE
+
+ros2 run rby1_examples 15_cartesian_target_move --ros-args -p mode:=stream   # instead: a stream of small steps, up to 10 cm/s
+ros2 run rby1_examples 16_target_shuttle_publisher --ros-args -p period:=8.0
+```
+
+Each target is answered `EXECUTING …`, then `DONE` when the hand ends within `tolerance` (5 mm) of it, else
+`FAILED: <reason and what to do>`. `mode:=command` sends one `robot_cartesian` command that takes `duration` seconds
+(3); `mode:=stream` opens the driver's stream channel of that arm for a move, sends `stream_cartesian` steps that speed up to
+`max_speed`, and closes the channel after it. A target that arrives during a move runs when the move ends, and only the
+latest one is kept. For the left arm, give both examples its topics
+(`-p target_topic:=/rby1/left_arm/target_pose -p status_topic:=/rby1/left_arm/target_status`) and the publisher points
+on the left side.
+
 ## Troubleshooting & Known Issues
 
 ### Issue: MoveIt Known Issues
-
-#### ⚠️ Warning: `Missing gripper_finger_r2_joint` / `gripper_finger_l2_joint`
-
-```
-[WARN] The complete state of the robot is not yet known. Missing gripper_finger_r2_joint
-```
-
-**Cause**: `gripper_finger_r2_joint` and `gripper_finger_l2_joint` are **mimic joints** (linked to `r1`/`l1` via `<mimic>` in the URDF) and are not registered in `ros2_control`. The `joint_state_broadcaster` does not publish state for them, so MoveIt's planning scene monitor raises this warning.
-
-**Impact**: **None** — motion planning and execution for all controlled joints works correctly. This warning can be safely ignored.
 
 #### ⚠️ Hardware Control Handoff
 

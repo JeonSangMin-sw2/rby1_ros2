@@ -9,7 +9,7 @@ Sequence (Phase 1 — Position Control):
   1. Ensure the robot is powered and enabled.
   2. Move whole body to Zero Pose.
   3. Enable a persistent command stream via '/stream_control': the channels of the parts
-     the trajectory names (arm, torso, head). A trajectory is refused when one is closed.
+     the trajectory names (right_arm, left_arm, torso, head). A trajectory is refused when one is closed.
   4. Send a whole-body trajectory (Zero → Target) using FollowJointTrajectory.
   5. Disable stream, return to Zero Pose.
 
@@ -35,7 +35,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 # Values to change: edit these to adjust the example.
 # The stream channels the trajectory needs: it names torso, arm and head joints. The base's (mobile) stays closed.
-STREAM_CHANNELS = 'arm, torso, head'
+STREAM_CHANNELS = 'right_arm, left_arm, torso, head'
 STREAM_HZ = 15.0                  # Hz, the stream rate; the trajectories have this many points per second
 # Zero pose, where the robot is moved before and after the phases
 ZERO_TORSO = [0.0] * 6            # rad, torso_0 .. torso_5

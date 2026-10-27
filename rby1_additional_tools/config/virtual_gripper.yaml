@@ -1,0 +1,9 @@
+# virtual_gripper: a gripper that only reports (virtual_gripper.launch.py). Nothing on the robot moves.
+virtual_gripper:
+  ros__parameters:
+    hands: ["right", "left"]         # /rby1/<hand>_gripper/command and /state for each
+    topic_prefix: /rby1
+    max_opening: 0.05                # m, each finger, fully open (the URDF's finger travel)
+    speed: 0.05                      # m/s, each finger (the URDF's finger velocity)
+    rate: 50.0                       # Hz, state messages
+    initial_opening: 0.05            # m, where the fingers are at start: open

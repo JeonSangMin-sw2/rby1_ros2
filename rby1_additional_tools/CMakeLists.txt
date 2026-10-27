@@ -29,6 +29,7 @@ else()
 endif()
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs videoio imgproc)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(Eigen3 REQUIRED)
 
@@ -55,13 +56,20 @@ else()
   message(WARNING "librealsense2 not found: realsense_publisher is not built (sudo apt install ros-humble-librealsense2)")
 endif()
 
-install(TARGETS camera_publisher DESTINATION lib/${PROJECT_NAME})
+# A stand-in for the grippers, which the driver does not drive: commands in, finger state out.
+add_executable(virtual_gripper src/virtual_gripper.cpp)
+target_include_directories(virtual_gripper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+ament_target_dependencies(virtual_gripper rclcpp sensor_msgs std_msgs)
+
+install(TARGETS camera_publisher virtual_gripper DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_camera_model test/test_camera_model.cpp)
   target_link_libraries(test_camera_model ${PROJECT_NAME}_core)
+  ament_add_gtest(test_virtual_gripper test/test_virtual_gripper.cpp)
+  target_include_directories(test_virtual_gripper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
 ament_package()

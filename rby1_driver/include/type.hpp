@@ -29,15 +29,6 @@ namespace rby1_ros2{
     };
 
     struct RobotParameter{
-        std::vector<std::string> power_on_list;
-        std::vector<std::string> servo_on_list;
-        double get_state_period;
-        double minimum_time;
-        double angular_velocity_limit;
-        double linear_velocity_limit;
-        double acceleration_limit;
-        double stop_orientation_tracking_error;
-        double stop_position_tracking_error;
         double se2_minimum_time;
         double se2_linear_acceleration_limit;
         double se2_angular_acceleration_limit;

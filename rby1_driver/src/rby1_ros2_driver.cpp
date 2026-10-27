@@ -10,16 +10,18 @@ RBY1_ROS2_DRIVER<ModelType>::RBY1_ROS2_DRIVER() : Node("rby1_ros2_driver") {
   try {
     robot_ = rb::Robot<ModelType>::Create(address);
     if (robot_->Connect()) {
+      robot_->SetParameter("joint_position_command.cutoff_frequency",
+                           std::to_string(joint_position_command_cutoff_frequency_));
+      robot_->SetParameter("cartesian_command.cutoff_frequency",
+                           std::to_string(cartesian_command_cutoff_frequency_));
       robot_->SetParameter("default.acceleration_limit_scaling",
-                           std::to_string(robot_parameter_.acceleration_limit));
-      robot_->SetParameter(
-          "joint_position_command.cutoff_frequency",
-          std::to_string(robot_parameter_.angular_velocity_limit));
-      robot_->SetParameter(
-          "cartesian_command.cutoff_frequency",
-          std::to_string(robot_parameter_.linear_velocity_limit));
+                           std::to_string(default_acceleration_limit_scaling_));
       robot_->SetParameter("default.linear_acceleration_limit",
-                           std::to_string(robot_parameter_.acceleration_limit));
+                           std::to_string(default_linear_acceleration_limit_));
+      robot_->SetParameter("default.velocity_limit_scaling",
+                           std::to_string(default_velocity_limit_scaling_));
+      robot_->SetParameter("default.angular_acceleration_limit",
+                           std::to_string(default_angular_acceleration_limit_));
       // Fetch robot info once and cache it
       info_ = robot_->GetRobotInfo();
 
@@ -188,8 +190,7 @@ RBY1_ROS2_DRIVER<ModelType>::RBY1_ROS2_DRIVER() : Node("rby1_ros2_driver") {
     // loop for reading joint state
     // loop for reading joint state
     joint_state_timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(
-            static_cast<int>(robot_parameter_.get_state_period * 1000.0)),
+        std::chrono::milliseconds(static_cast<int>(kStatePeriod * 1000.0)),
         std::bind(&RBY1_ROS2_DRIVER<ModelType>::read_joint_state, this));
 
     // service for important robot action
@@ -242,7 +243,6 @@ RBY1_ROS2_DRIVER<ModelType>::RBY1_ROS2_DRIVER() : Node("rby1_ros2_driver") {
             std::bind(&RBY1_ROS2_DRIVER<ModelType>::hardware_control_callback,
                       this, _1, _2));
 
-    last_stream_command_time_ns_ = this->now().nanoseconds();
     stream_safety_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(100),
         std::bind(&RBY1_ROS2_DRIVER<ModelType>::check_stream_safety, this));
@@ -321,134 +321,6 @@ RBY1_ROS2_DRIVER<ModelType>::RBY1_ROS2_DRIVER() : Node("rby1_ros2_driver") {
                 this, _1),
             stream_options);
 
-    if (robot_initialize_flag) {
-      RCLCPP_INFO(this->get_logger(),
-                  "[INITIALIZE] initialize_robot is true. Starting automatic "
-                  "power/servo initialization...");
-
-      // --- Power ON (mirrors power_control service logic) ---
-      {
-        // Build power_list_str from robot_parameter_.power_on_list
-        std::string power_list_str;
-        if (address == "127.0.0.1:50051" || address == "localhost:50051") {
-          power_list_str = ".*";
-        } else {
-          const auto &plist = robot_parameter_.power_on_list;
-          for (size_t i = 0; i < plist.size(); i++) {
-            if (plist[i] == "all" || plist[i] == ".*") {
-              power_list_str = ".*";
-              break;
-            }
-            power_list_str += plist[i];
-            if (plist[i].find('v') == std::string::npos && plist[i] != ".*") {
-              power_list_str += "v";
-            }
-            if (i != plist.size() - 1) {
-              power_list_str += "|";
-            }
-          }
-        }
-
-        if (robot_->IsPowerOn(power_list_str)) {
-          RCLCPP_INFO(this->get_logger(),
-                      "[INITIALIZE] Power is already ON [%s], skipping.",
-                      power_list_str.c_str());
-        } else {
-          RCLCPP_INFO(this->get_logger(), "[INITIALIZE] Power ON [%s]...",
-                      power_list_str.c_str());
-          if (!robot_->PowerOn(power_list_str)) {
-            RCLCPP_ERROR(this->get_logger(),
-                         "[INITIALIZE] Failed to power on [%s]. Aborting "
-                         "initialization.",
-                         power_list_str.c_str());
-            throw std::runtime_error(
-                "[INITIALIZE] PowerOn failed during robot initialization.");
-          }
-          RCLCPP_INFO(this->get_logger(), "[INITIALIZE] Power ON succeeded.");
-          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        }
-      }
-
-      // --- Servo ON (mirrors servo_control service logic) ---
-      {
-        // Build servo_list_str from robot_parameter_.servo_on_list
-        std::string servo_list_str;
-        const auto &slist = robot_parameter_.servo_on_list;
-        for (size_t i = 0; i < slist.size(); i++) {
-          const std::string &name = slist[i];
-          if (name == "right")
-            servo_list_str += "^right_arm_.*";
-          else if (name == "left")
-            servo_list_str += "^left_arm_.*";
-          else if (name == "head")
-            servo_list_str += "^head_.*";
-          else if (name == "torso")
-            servo_list_str += "^torso_.*";
-          else if (name == "all") {
-            servo_list_str = ".*";
-            break;
-          } else {
-            servo_list_str += name;
-          }
-          if (i != slist.size() - 1) {
-            servo_list_str += "|";
-          }
-        }
-
-        bool already_on = false;
-        try {
-          if (robot_->IsServoOn(servo_list_str))
-            already_on = true;
-        } catch (...) {
-        }
-        if (robot_->GetControlManagerState().state ==
-            rb::ControlManagerState::State::kEnabled) {
-          already_on = true;
-        }
-
-        if (already_on) {
-          RCLCPP_INFO(this->get_logger(),
-                      "[INITIALIZE] Servo is already ON [%s], skipping.",
-                      servo_list_str.c_str());
-          check_controll_manager();
-        } else {
-          RCLCPP_INFO(this->get_logger(), "[INITIALIZE] Servo ON [%s]...",
-                      servo_list_str.c_str());
-          if (!robot_->ServoOn(servo_list_str)) {
-            RCLCPP_ERROR(this->get_logger(),
-                         "[INITIALIZE] SDK ServoOn failed for [%s]. Aborting "
-                         "initialization.",
-                         servo_list_str.c_str());
-            throw std::runtime_error(
-                "[INITIALIZE] ServoOn failed during robot initialization.");
-          }
-          std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-          { // sync info
-            std::lock_guard<std::mutex> lock(mutex_);
-            info_ = robot_->GetRobotInfo();
-            resize_joint_states();
-          }
-
-          RCLCPP_INFO(
-              this->get_logger(),
-              "[INITIALIZE] Checking Control Manager after Servo ON...");
-          if (!check_controll_manager()) {
-            RCLCPP_ERROR(
-                this->get_logger(),
-                "[INITIALIZE] Control Manager check failed after Servo ON.");
-            throw std::runtime_error(
-                "[INITIALIZE] Control Manager failed after ServoOn during "
-                "robot initialization.");
-          }
-          RCLCPP_INFO(this->get_logger(),
-                      "[INITIALIZE] Servo ON and Control Manager ready.");
-        }
-      }
-
-      RCLCPP_INFO(this->get_logger(),
-                  "[INITIALIZE] Robot initialization complete.");
-    }
   } catch (const std::exception &e) {
     RCLCPP_ERROR(this->get_logger(),
                  "\033[1;31m[INITIALIZATION ERROR] Exception caught during "
@@ -460,41 +332,31 @@ RBY1_ROS2_DRIVER<ModelType>::RBY1_ROS2_DRIVER() : Node("rby1_ros2_driver") {
 
 template <typename ModelType> RBY1_ROS2_DRIVER<ModelType>::~RBY1_ROS2_DRIVER() {
   stream_active_ = false;
-  arm_stream_.handler.reset();
-  torso_stream_.handler.reset();
-  if (mobility_stream_handler_) {
-    mobility_stream_handler_.reset();
-  }
-  if (head_stream_handler_) {
-    head_stream_handler_.reset();
-  }
+  for (int channel : kStreamChannels)
+    channel_stream(channel).handler.reset();
 }
 
 template <typename ModelType>
 void RBY1_ROS2_DRIVER<ModelType>::init_parameter() {
   RCLCPP_INFO(this->get_logger(), "Declaring parameters...");
   this->declare_parameter<std::string>("robot_ip", "127.0.0.1:50051");
-  this->declare_parameter<std::string>("model", "a");
-  this->declare_parameter<bool>("initialize_robot", false);
-  this->declare_parameter<std::vector<std::string>>("power_on", {"all"});
-  this->declare_parameter<std::vector<std::string>>("servo_on", {"all"});
+  this->declare_parameter<std::string>("model", "m");
 
-  this->declare_parameter<double>("get_state_period", 0.01);
-  this->declare_parameter<double>("minimum_time", 2.0);
-  this->declare_parameter<double>("angular_velocity_limit", 4.712388);
-  this->declare_parameter<double>("linear_velocity_limit", 1.5);
-  this->declare_parameter<double>("acceleration_limit", 1.0);
-  this->declare_parameter<double>("stop_orientation_tracking_error", 1e-5);
-  this->declare_parameter<double>("stop_position_tracking_error", 1e-5);
+  // The defaults are those of config/driver_parameters.yaml (2026-10-26).
   this->declare_parameter<double>("se2_minimum_time", 1.0);
   this->declare_parameter<double>("se2_linear_acceleration_limit", 0.5);
   this->declare_parameter<double>("se2_angular_acceleration_limit", 0.5);
-  this->declare_parameter<double>("stream_hz", 15.0);
+  this->declare_parameter<double>("stream_command_hz", 30.0);
+  // The robot's own defaults (read from the simulator, 2026-10-26).
+  this->declare_parameter<double>("joint_position_command_cutoff_frequency", 15.0);
+  this->declare_parameter<double>("cartesian_command_cutoff_frequency", 15.0);
+  this->declare_parameter<double>("default_acceleration_limit_scaling", 1.0);
+  this->declare_parameter<double>("default_velocity_limit_scaling", 1.0);
+  this->declare_parameter<double>("default_linear_acceleration_limit", 20.0);
+  this->declare_parameter<double>("default_angular_acceleration_limit", 10.0);
 
-  this->declare_parameter<bool>("fault_reset_trigger", true);
-  this->declare_parameter<double>("collision_threshold", 0.01);
-  this->declare_parameter<double>("state_loss_timeout", 1.0);
-  this->declare_parameter<double>("fjt_start_velocity_scale", 1.0);
+  this->declare_parameter<bool>("fault_reset_trigger", false);
+  this->declare_parameter<double>("collision_threshold", 0.02);
   this->declare_parameter<bool>("publish_battery_state", true);
   this->declare_parameter<bool>("publish_tool_flange_state", true);
 
@@ -505,21 +367,6 @@ void RBY1_ROS2_DRIVER<ModelType>::init_parameter() {
   joint_position_topic_name = "robot_joint";
   cartesian_position_topic_name = "robot_cartesian";
 
-  this->get_parameter("initialize_robot", robot_initialize_flag);
-  this->get_parameter("power_on", robot_parameter_.power_on_list);
-  this->get_parameter("servo_on", robot_parameter_.servo_on_list);
-  this->get_parameter("get_state_period", robot_parameter_.get_state_period);
-  this->get_parameter("minimum_time", robot_parameter_.minimum_time);
-  this->get_parameter("angular_velocity_limit",
-                      robot_parameter_.angular_velocity_limit);
-  this->get_parameter("linear_velocity_limit",
-                      robot_parameter_.linear_velocity_limit);
-  this->get_parameter("acceleration_limit",
-                      robot_parameter_.acceleration_limit);
-  this->get_parameter("stop_orientation_tracking_error",
-                      robot_parameter_.stop_orientation_tracking_error);
-  this->get_parameter("stop_position_tracking_error",
-                      robot_parameter_.stop_position_tracking_error);
   this->get_parameter("se2_minimum_time", robot_parameter_.se2_minimum_time);
   this->get_parameter("se2_linear_acceleration_limit",
                       robot_parameter_.se2_linear_acceleration_limit);
@@ -527,11 +374,21 @@ void RBY1_ROS2_DRIVER<ModelType>::init_parameter() {
                       robot_parameter_.se2_angular_acceleration_limit);
   this->get_parameter("fault_reset_trigger", fault_reset_trigger);
   this->get_parameter("collision_threshold", collision_threshold_);
-  this->get_parameter("state_loss_timeout", state_loss_timeout_);
-  this->get_parameter("fjt_start_velocity_scale", fjt_start_velocity_scale_);
   this->get_parameter("publish_battery_state", publish_battery_state_);
   this->get_parameter("publish_tool_flange_state", publish_tool_flange_state_);
-  this->get_parameter("stream_hz", stream_hz_);
+  this->get_parameter("stream_command_hz", stream_command_hz_);
+  this->get_parameter("joint_position_command_cutoff_frequency",
+                      joint_position_command_cutoff_frequency_);
+  this->get_parameter("cartesian_command_cutoff_frequency",
+                      cartesian_command_cutoff_frequency_);
+  this->get_parameter("default_acceleration_limit_scaling",
+                      default_acceleration_limit_scaling_);
+  this->get_parameter("default_linear_acceleration_limit",
+                      default_linear_acceleration_limit_);
+  this->get_parameter("default_velocity_limit_scaling",
+                      default_velocity_limit_scaling_);
+  this->get_parameter("default_angular_acceleration_limit",
+                      default_angular_acceleration_limit_);
   collision_enable_ = true;
 
   if (address == "" || model == "") {
@@ -613,14 +470,8 @@ void RBY1_ROS2_DRIVER<ModelType>::power_control(
     {
       std::lock_guard<std::mutex> stream_lock(stream_mutex_);
       stream_closed_at_ = std::chrono::steady_clock::now();
-      arm_stream_.handler.reset();
-      torso_stream_.handler.reset();
-      if (mobility_stream_handler_) {
-        mobility_stream_handler_.reset();
-      }
-      if (head_stream_handler_) {
-        head_stream_handler_.reset();
-      }
+      for (int channel : kStreamChannels)
+        channel_stream(channel).handler.reset();
       stream_active_ = false;
     }
     if (!robot_->PowerOff(power_list_str)) {
@@ -737,14 +588,8 @@ void RBY1_ROS2_DRIVER<ModelType>::servo_control(
     {
       std::lock_guard<std::mutex> stream_lock(stream_mutex_);
       stream_closed_at_ = std::chrono::steady_clock::now();
-      arm_stream_.handler.reset();
-      torso_stream_.handler.reset();
-      if (mobility_stream_handler_) {
-        mobility_stream_handler_.reset();
-      }
-      if (head_stream_handler_) {
-        head_stream_handler_.reset();
-      }
+      for (int channel : kStreamChannels)
+        channel_stream(channel).handler.reset();
       stream_active_ = false;
     }
     if (!robot_->ServoOff(servo_list_str)) {
@@ -1191,7 +1036,12 @@ void RBY1_ROS2_DRIVER<ModelType>::read_joint_state() {
         double vy = 0.0;
         double wz = 0.0;
 
-        double dt = robot_parameter_.get_state_period;
+        // The loop is timed at kStatePeriod but runs at 97 to 100 Hz (measured): the
+        // velocity uses the time the two readings are apart, not the nominal period.
+        static int64_t last_odom_ns = 0;
+        const int64_t odom_ns = this->now().nanoseconds();
+        const double dt = first_odom ? 0.0 : (odom_ns - last_odom_ns) * 1e-9;
+        last_odom_ns = odom_ns;
         if (dt > 0.0 && !first_odom) {
           vx = (x - last_x) / dt;
           vy = (y - last_y) / dt;
@@ -1444,12 +1294,12 @@ void RBY1_ROS2_DRIVER<ModelType>::read_joint_state() {
       last_state_ok_ns_ = now_ns;
     ++failed_state_reads_;
     const double failing_for = (now_ns - last_state_ok_ns_) * 1e-9;
-    if (failing_for < state_loss_timeout_) {
+    if (failing_for < kStateLossTimeout) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 250,
                            "State read failed (%d in a row, %.2f s): %s -- a blip is harmless; "
-                           "the driver stops after %.1f s of this (state_loss_timeout). Check the "
-                           "robot or simulator and the network if it keeps coming",
-                           failed_state_reads_, failing_for, e.what(), state_loss_timeout_);
+                           "the driver stops after %.1f s of this. Check the robot or "
+                           "simulator and the network if it keeps coming",
+                           failed_state_reads_, failing_for, e.what(), kStateLossTimeout);
       return;
     }
     RCLCPP_ERROR(this->get_logger(), "Error in read_joint_state loop: %s", e.what());
@@ -1529,9 +1379,9 @@ RBY1_ROS2_DRIVER<ModelType>::handle_follow_joint_trajectory_goal(
 
 // The first waypoint must be reachable from the measured posture in the time the
 // trajectory gives it: the implied speed (difference / time to the first
-// waypoint) may not exceed a joint's velocity limit times
-// fjt_start_velocity_scale. A far start is fine if it is given enough time; a
-// near one is not if it must happen at once.
+// waypoint) may not exceed a joint's velocity limit (times kFjtStartVelocityScale,
+// 1.0). A far start is fine if it is given enough time; a near one is not if it
+// must happen at once.
 template <typename ModelType>
 std::optional<std::string> RBY1_ROS2_DRIVER<ModelType>::start_problem(
     const trajectory_msgs::msg::JointTrajectory &trajectory) {
@@ -1562,7 +1412,7 @@ std::optional<std::string> RBY1_ROS2_DRIVER<ModelType>::start_problem(
       continue;
     const double current = state.position[state_idx];
     const double needed = std::abs(first.positions[j] - current) / t0;
-    const double limit = qdot_upper_[dyn_idx] * fjt_start_velocity_scale_;
+    const double limit = qdot_upper_[dyn_idx] * kFjtStartVelocityScale;
     if (needed > limit) {
       std::ostringstream reason;
       reason << "start too far from the robot: joint '" << name << "' is at "
@@ -1584,10 +1434,35 @@ RBY1_ROS2_DRIVER<ModelType>::handle_follow_joint_trajectory_cancel(
   RCLCPP_INFO(this->get_logger(),
               "Received request to cancel FollowJointTrajectory goal");
   (void)goal_handle;
-  robot_->CancelControl();
-  // if (stream_handler_) {
-  //     stream_handler_->Cancel();
-  // }
+  // Only the streams the trajectory is on. robot_->CancelControl() ends every
+  // stream of the robot, so a head tracker's stream went with a cancelled arm
+  // trajectory and did not come back (simulator: the head stood still after 10 of
+  // 10 cancels).
+  {
+    std::lock_guard<std::mutex> stream_lock(stream_mutex_);
+    const int parts = fjt_parts_.load();
+    // A cancelled stream is dead: the next command on it is refused as expired, and
+    // a stream opened at once in its place comes up expired too (simulator
+    // 2026-10-26: 17 reopenings, one per waypoint, for 0.85 s after a cancel). So it
+    // is marked, and reopened kStreamReopenGap later by the next command.
+    auto cancel = [](BodyStream &stream) {
+      if (!stream.handler)
+        return;
+      try {
+        stream.handler->Cancel();
+      } catch (...) {
+      }
+      stream.expired_at = std::chrono::steady_clock::now();
+    };
+    if (parts & STREAM_RIGHT_ARM)
+      cancel(right_arm_stream_);
+    if (parts & STREAM_LEFT_ARM)
+      cancel(left_arm_stream_);
+    if (parts & STREAM_TORSO)
+      cancel(torso_stream_);
+    if (parts & STREAM_HEAD)
+      cancel(head_stream_);
+  }
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -1634,28 +1509,23 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_follow_joint_trajectory(
   auto result = std::make_shared<FollowJointTrajectory::Result>();
 
   // The parts the trajectory names go out each on its own channel, which must be
-  // open. The arms go together: an arm the channel carries and the trajectory does
-  // not name is held at its start posture.
+  // open: the driver does not open a channel for a command (2026-10-26 user
+  // decision), the client opens the channels it will use with stream_control.
   const int named = trajectory_parts(goal_handle->get_goal()->trajectory);
-  const int named_arms = named & (STREAM_RIGHT_ARM | STREAM_LEFT_ARM);
   const bool head_commanded = named & STREAM_HEAD;
   int parts = 0;
   {
     std::lock_guard<std::mutex> stream_lock(stream_mutex_);
     std::string refused;
     if (!stream_active_)
-      refused = "Stream control is not active. Please activate stream control first.";
+      refused = "Stream control is not active: open the channels of the parts this "
+                "trajectory names with stream_control first.";
     else if (named == 0)
       refused = "The trajectory names no joint of the torso, the arms or the head.";
-    else if (named_arms != 0 && !arm_stream_.handler)
-      refused = "Stream channel 'arm' is not open: call stream_control with parameters arm.";
-    else if ((named_arms & ~arm_stream_.carries) != 0)
-      refused = "Stream channel 'arm' does not carry an arm this trajectory names: "
-                "its servo was off when the channel was opened.";
-    else if ((named & STREAM_TORSO) && !torso_stream_.handler)
-      refused = "Stream channel 'torso' is not open: call stream_control with parameters torso.";
-    else if (head_commanded && !head_stream_handler_)
-      refused = "Stream channel 'head' is not open: call stream_control with parameters head.";
+    else if (const int closed = channels_of_parts(named) & ~open_stream_channels())
+      refused = "Stream channel '" + stream_channel_names(closed) +
+                "' is not open: open it with stream_control (parameters: " +
+                stream_channel_names(closed) + ") and send the trajectory again.";
     if (!refused.empty()) {
       result->error_code = FollowJointTrajectory::Result::INVALID_GOAL;
       result->error_string = refused;
@@ -1668,8 +1538,7 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_follow_joint_trajectory(
       }
       return;
     }
-    parts = (named & (STREAM_TORSO | STREAM_HEAD)) |
-            (named_arms != 0 ? arm_stream_.carries : 0);
+    parts = named;
     fjt_parts_ = parts;
   }
 
@@ -1909,13 +1778,13 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_follow_joint_trajectory(
           body_part(info_.right_arm_joint_idx,
                     trajectory_impedance_enabled_right_arm_,
                     trajectory_stiffness_right_arm_, [&](const auto &b) {
-                      body.arms.SetRightArmCommand(rb::ArmCommandBuilder(b));
+                      body.right_arm.SetRightArmCommand(rb::ArmCommandBuilder(b));
                     });
         if (parts & STREAM_LEFT_ARM)
           body_part(info_.left_arm_joint_idx,
                     trajectory_impedance_enabled_left_arm_,
                     trajectory_stiffness_left_arm_, [&](const auto &b) {
-                      body.arms.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+                      body.left_arm.SetLeftArmCommand(rb::ArmCommandBuilder(b));
                     });
         if (head_commanded) {
           rb::JointPositionCommandBuilder b;
@@ -2205,10 +2074,11 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command(
     rb::ComponentBasedCommandBuilder head_cmd_builder;
     const bool head_apart = stream_active_;
     rb::BodyComponentBasedCommandBuilder body_comp;
-    // In stream mode the torso and the arms go out on their own streams too.
+    // In stream mode the torso and each arm go out on their own streams too.
     BodyCommand stream_body;
     auto &torso_comp = head_apart ? stream_body.torso : body_comp;
-    auto &arms_comp = head_apart ? stream_body.arms : body_comp;
+    auto &right_comp = head_apart ? stream_body.right_arm : body_comp;
+    auto &left_comp = head_apart ? stream_body.left_arm : body_comp;
     bool use_body = false;
     bool use_head = false;
     std::string err_msg;
@@ -2218,10 +2088,10 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command(
                             use_head, err_msg) ||
         !process_joint_part(
             goal->right_arm, "right_arm", info_.right_arm_joint_idx.size(),
-            arms_comp, component_cmd_builder, use_body, use_head, err_msg) ||
+            right_comp, component_cmd_builder, use_body, use_head, err_msg) ||
         !process_joint_part(
             goal->left_arm, "left_arm", info_.left_arm_joint_idx.size(),
-            arms_comp, component_cmd_builder, use_body, use_head, err_msg) ||
+            left_comp, component_cmd_builder, use_body, use_head, err_msg) ||
         !process_joint_part(goal->head, "head", info_.head_joint_idx.size(),
                             body_comp,
                             head_apart ? head_cmd_builder : component_cmd_builder,
@@ -2258,12 +2128,11 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command(
             (goal->right_arm.position.empty() ? 0 : STREAM_RIGHT_ARM) |
             (goal->left_arm.position.empty() ? 0 : STREAM_LEFT_ARM);
         const std::string refused =
-            use_head && !head_stream_handler_
-                ? "stream channel 'head' is not open (stream_control with "
-                  "parameters: head)"
+            use_head && !head_stream_.handler
+                ? "stream channel 'head' is not open: open it with stream_control "
+                  "(parameters: head) and send again"
                 : send_body(stream_body,
-                            moves_for > 0.0 ? moves_for
-                                            : robot_parameter_.minimum_time,
+                            moves_for > 0.0 ? moves_for : kDefaultMinimumTime,
                             0.5, true);
         if (!refused.empty()) {
           result->success = false;
@@ -2276,13 +2145,12 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command(
         }
         if (use_head)
           send_head(head_cmd_builder);
-        last_stream_command_time_ns_ = this->now().nanoseconds();
       }
       double max_mt =
           std::max({goal->torso.minimum_time, goal->right_arm.minimum_time,
                     goal->left_arm.minimum_time, goal->head.minimum_time});
       if (max_mt <= 0.0)
-        max_mt = robot_parameter_.minimum_time;
+        max_mt = kDefaultMinimumTime;
       uint64_t my_seq = ++command_seq_;
       auto deadline = std::chrono::steady_clock::now() +
                       std::chrono::duration<double>(max_mt);
@@ -2308,9 +2176,6 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_joint_command(
         }
         if (std::chrono::steady_clock::now() >= deadline)
           break;
-        // The driver itself is carrying this command out: keep the stream's idle
-        // timeout (check_stream_safety) from closing it under the move.
-        last_stream_command_time_ns_ = this->now().nanoseconds();
         rate.sleep();
       }
       result->success = true;
@@ -2608,11 +2473,12 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
     // Build Cartesian Command
     rb::ComponentBasedCommandBuilder component_cmd_builder;
     rb::BodyComponentBasedCommandBuilder body_comp;
-    // In stream mode the torso and the arms go out on their own streams.
+    // In stream mode the torso and each arm go out on their own streams.
     const bool streaming = stream_active_;
     BodyCommand stream_body;
     auto &torso_comp = streaming ? stream_body.torso : body_comp;
-    auto &arms_comp = streaming ? stream_body.arms : body_comp;
+    auto &right_comp = streaming ? stream_body.right_arm : body_comp;
+    auto &left_comp = streaming ? stream_body.left_arm : body_comp;
     bool use_body = false;
     std::string err_msg;
 
@@ -2623,11 +2489,11 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
         !process_cartesian_part(goal->right_arm, "right_arm",
                                 goal->stop_position_tracking_error,
                                 goal->stop_orientation_tracking_error,
-                                arms_comp, use_body, err_msg) ||
+                                right_comp, use_body, err_msg) ||
         !process_cartesian_part(goal->left_arm, "left_arm",
                                 goal->stop_position_tracking_error,
                                 goal->stop_orientation_tracking_error,
-                                arms_comp, use_body, err_msg)) {
+                                left_comp, use_body, err_msg)) {
 
       result->success = false;
       result->finish_code = err_msg;
@@ -2652,6 +2518,14 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
 
     // ── STREAM MODE: send on the parts' streams, wait minimum_time ──
     if (streaming) {
+      // Early-end check, switched off (2026-10-19 user decision): it ran 600 normal
+      // commands without a false alarm and caught 10 of 10 forced ends (another client
+      // taking the torso), but the robot's own early end did not come back in those 600.
+      // Uncomment the four marked places below to turn it on again.
+      // [early-end 1/4] The streams this command went out on.
+      // const void *watched_torso = nullptr;
+      // const void *watched_right_arm = nullptr;
+      // const void *watched_left_arm = nullptr;
       {
         std::lock_guard<std::mutex> sl(stream_mutex_);
         double moves_for =
@@ -2663,8 +2537,7 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
             (goal->left_arm.ref_link.empty() ? 0 : STREAM_LEFT_ARM);
         const std::string refused = send_body(
             stream_body,
-            moves_for > 0.0 ? moves_for : robot_parameter_.minimum_time, 0.5,
-            true);
+            moves_for > 0.0 ? moves_for : kDefaultMinimumTime, 0.5, true);
         if (!refused.empty()) {
           result->success = false;
           result->finish_code = "Stream: " + refused;
@@ -2674,17 +2547,62 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
           }
           return;
         }
+        // [early-end 2/4]
+        // if (stream_body.parts & STREAM_TORSO)
+        //   watched_torso = torso_stream_.handler.get();
+        // if (stream_body.parts & STREAM_RIGHT_ARM)
+        //   watched_right_arm = right_arm_stream_.handler.get();
+        // if (stream_body.parts & STREAM_LEFT_ARM)
+        //   watched_left_arm = left_arm_stream_.handler.get();
       }
       double max_mt =
           std::max({goal->torso.minimum_time, goal->right_arm.minimum_time,
                     goal->left_arm.minimum_time});
       if (max_mt <= 0.0)
-        max_mt = robot_parameter_.minimum_time;
+        max_mt = kDefaultMinimumTime;
       uint64_t my_seq = ++command_seq_;
+      // [early-end 3/4] instead of the deadline line below:
+      // const auto sent_at = std::chrono::steady_clock::now();
+      // auto deadline = sent_at + std::chrono::duration<double>(max_mt);
       auto deadline = std::chrono::steady_clock::now() +
                       std::chrono::duration<double>(max_mt);
       rclcpp::Rate rate(100);
       while (rclcpp::ok()) {
+        // [early-end 4/4] The robot sometimes ends a Cartesian command on its stream by
+        // itself, long before minimum_time, and reports it done: the part stops short
+        // (simulator 2026-10-19: 4 of 895 torso commands, after 0.03 to 1.97 s of 1 to
+        // 3 s, with or without stop tracking errors). It then closes the stream. The last
+        // 0.1 s is left to the robot's own end of the command.
+        // if (deadline - std::chrono::steady_clock::now() > std::chrono::milliseconds(100)) {
+        //   bool ended = false;
+        //   {
+        //     std::lock_guard<std::mutex> sl(stream_mutex_);
+        //     auto gone = [](const BodyStream &stream, const void *watched) {
+        //       return watched != nullptr && stream.handler.get() == watched &&
+        //              stream.handler->IsDone();
+        //     };
+        //     ended = gone(torso_stream_, watched_torso) ||
+        //             gone(right_arm_stream_, watched_right_arm) ||
+        //             gone(left_arm_stream_, watched_left_arm);
+        //   }
+        //   if (ended) {
+        //     const double after = std::chrono::duration<double>(
+        //         std::chrono::steady_clock::now() - sent_at).count();
+        //     RCLCPP_WARN(this->get_logger(),
+        //                 "Rby1CartesianCommand: the robot ended it after %.2f s of "
+        //                 "%.2f s (its stream closed); the part stopped short",
+        //                 after, max_mt);
+        //     result->success = false;
+        //     result->finish_code = "kEndedEarly: the robot ended the command after " +
+        //                           std::to_string(after).substr(0, 4) + " s of its " +
+        //                           std::to_string(max_mt).substr(0, 4) + " s";
+        //     try {
+        //       goal_handle->abort(result);
+        //     } catch (...) {
+        //     }
+        //     return;
+        //   }
+        // }
         if (command_seq_.load() != my_seq) {
           result->success = false;
           result->finish_code = "kPreempted";
@@ -2705,9 +2623,6 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_rby1_cartesian_command(
         }
         if (std::chrono::steady_clock::now() >= deadline)
           break;
-        // The driver itself is carrying this command out: keep the stream's idle
-        // timeout (check_stream_safety) from closing it under the move.
-        last_stream_command_time_ns_ = this->now().nanoseconds();
         rate.sleep();
       }
       result->success = true;
@@ -2910,14 +2825,8 @@ void RBY1_ROS2_DRIVER<ModelType>::control_manager_callback(
         {
           std::lock_guard<std::mutex> stream_lock(stream_mutex_);
           stream_closed_at_ = std::chrono::steady_clock::now();
-          arm_stream_.handler.reset();
-          torso_stream_.handler.reset();
-          if (mobility_stream_handler_) {
-            mobility_stream_handler_.reset();
-          }
-          if (head_stream_handler_) {
-            head_stream_handler_.reset();
-          }
+          for (int channel : kStreamChannels)
+            channel_stream(channel).handler.reset();
           stream_active_ = false;
         }
         response->success = true;
@@ -2933,14 +2842,8 @@ void RBY1_ROS2_DRIVER<ModelType>::control_manager_callback(
         {
           std::lock_guard<std::mutex> stream_lock(stream_mutex_);
           stream_closed_at_ = std::chrono::steady_clock::now();
-          arm_stream_.handler.reset();
-          torso_stream_.handler.reset();
-          if (mobility_stream_handler_) {
-            mobility_stream_handler_.reset();
-          }
-          if (head_stream_handler_) {
-            head_stream_handler_.reset();
-          }
+          for (int channel : kStreamChannels)
+            channel_stream(channel).handler.reset();
           stream_active_ = false;
         }
         response->success = true;
@@ -2989,15 +2892,16 @@ void RBY1_ROS2_DRIVER<ModelType>::cmd_vel_callback(
                              "Ignoring command.");
         return;
       }
-      if (!stream_active_ || !mobility_stream_handler_) {
+      if (!mobility_stream_.handler) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                             "cmd_vel received but mobility stream control is "
-                             "not active. Ignoring command.");
+                             "cmd_vel received but stream channel 'mobile' is not "
+                             "open: open it with stream_control (parameters: "
+                             "mobile). Ignoring command.");
         return;
       }
     }
 
-    double hz = stream_hz_;
+    double hz = stream_command_hz_;
     if (hz <= 0.0)
       hz = 15.0;
     double minimum_time = (1.0 / hz) * 1.1;
@@ -3012,9 +2916,9 @@ void RBY1_ROS2_DRIVER<ModelType>::cmd_vel_callback(
     robot_cmd.SetCommand(comp_builder);
 
     std::lock_guard<std::mutex> lock(stream_mutex_);
-    if (stream_active_ && mobility_stream_handler_) {
-      mobility_stream_handler_->SendCommand(robot_cmd);
-      last_stream_command_time_ns_ = this->now().nanoseconds();
+    if (mobility_stream_.handler) {
+      mobility_stream_.handler->SendCommand(robot_cmd);
+      mobility_stream_.commanded = true;
     }
   } catch (const std::exception &e) {
     RCLCPP_ERROR(this->get_logger(), "Exception in cmd_vel_callback: %s",
@@ -3032,8 +2936,8 @@ void RBY1_ROS2_DRIVER<ModelType>::stream_control_callback(
   if (channels == 0) {
     response->success = false;
     response->message = "Unknown stream channel in '" + request->parameters +
-                        "': name arm, torso, mobile or head, separated by "
-                        "commas, or all (also when empty).";
+                        "': name right_arm, left_arm, torso, mobile or head, "
+                        "separated by commas; or all (also when empty).";
     RCLCPP_WARN(this->get_logger(), "stream_control: %s",
                 response->message.c_str());
     return;
@@ -3052,9 +2956,9 @@ void RBY1_ROS2_DRIVER<ModelType>::stream_control_callback(
       return;
     }
 
-    this->get_parameter("stream_hz", stream_hz_);
-    if (stream_hz_ <= 0.0)
-      stream_hz_ = 15.0;
+    this->get_parameter("stream_command_hz", stream_command_hz_);
+    if (stream_command_hz_ <= 0.0)
+      stream_command_hz_ = 15.0;
 
     std::lock_guard<std::mutex> stream_lock(stream_mutex_);
     const int already = channels & open_stream_channels();
@@ -3066,69 +2970,19 @@ void RBY1_ROS2_DRIVER<ModelType>::stream_control_callback(
       RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
       return;
     }
-    try {
-      // Nothing is opened unless every channel asked for can be: a channel whose
-      // servos are off would take commands the robot never carries out.
-      std::string blocked;
-      int arms = 0;
-      if (wanted & CHANNEL_ARM) {
-        arms = (robot_->IsServoOn("^right_arm_.*") ? STREAM_RIGHT_ARM : 0) |
-               (robot_->IsServoOn("^left_arm_.*") ? STREAM_LEFT_ARM : 0);
-        if (arms == 0)
-          blocked += " arm (neither arm's servo is on);";
-      }
-      if ((wanted & CHANNEL_TORSO) && !robot_->IsServoOn("^torso_.*"))
-        blocked += " torso (its servo is off);";
-      if ((wanted & CHANNEL_MOBILE) && !robot_->IsServoOn(".*wheel.*"))
-        blocked += " mobile (its servo is off);";
-      if ((wanted & CHANNEL_HEAD) && !robot_->IsServoOn("^head_.*"))
-        blocked += " head (its servo is off);";
-      if (!blocked.empty()) {
-        response->success = false;
-        response->message = "Cannot open stream channel:" + blocked +
-                            " nothing was opened. Switch the servo on first.";
-        RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
-        return;
-      }
-
-      // A stream opened right after one was closed comes up dead: it takes
-      // commands without an error and the robot does not move (none at 0.3 s).
-      std::this_thread::sleep_until(stream_closed_at_ + kStreamReopenGap);
-      if (wanted & CHANNEL_ARM) {
-        arm_stream_ = BodyStream{};
-        arm_stream_.handler = robot_->CreateCommandStream(10);
-        arm_stream_.carries = arms;
-      }
-      if (wanted & CHANNEL_TORSO) {
-        torso_stream_ = BodyStream{};
-        torso_stream_.handler = robot_->CreateCommandStream(10);
-        torso_stream_.carries = STREAM_TORSO;
-      }
-      if (wanted & CHANNEL_MOBILE)
-        mobility_stream_handler_ = robot_->CreateCommandStream(10);
-      if (wanted & CHANNEL_HEAD)
-        head_stream_handler_ = robot_->CreateCommandStream(10);
-
-      last_stream_command_time_ns_ = this->now().nanoseconds();
-      stream_active_ = true;
-
-      response->success = true;
-      response->message = "Stream channels opened: " + stream_channel_names(wanted);
-      if (already != 0)
-        response->message += "; already open: " + stream_channel_names(already);
-      if ((wanted & CHANNEL_ARM) && arms != (STREAM_RIGHT_ARM | STREAM_LEFT_ARM))
-        response->message += std::string("; arm carries the ") +
-                             (arms == STREAM_RIGHT_ARM ? "right" : "left") +
-                             " arm only (the other arm's servo is off)";
-      response->message += ".";
-      RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
-    } catch (const std::exception &e) {
-      close_stream_channels(wanted, false);
+    const std::string refused = open_channels(wanted);
+    if (!refused.empty()) {
       response->success = false;
-      response->message =
-          std::string("Failed to activate stream control: ") + e.what();
-      RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
+      response->message = refused;
+      RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
+      return;
     }
+    response->success = true;
+    response->message = "Stream channels opened: " + stream_channel_names(wanted);
+    if (already != 0)
+      response->message += "; already open: " + stream_channel_names(already);
+    response->message += ".";
+    RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
   } else {
     std::lock_guard<std::mutex> stream_lock(stream_mutex_);
     const int closing = channels & open_stream_channels();
@@ -3143,14 +2997,16 @@ void RBY1_ROS2_DRIVER<ModelType>::stream_control_callback(
   }
 }
 
-// "arm, head" as channel bits; nothing or "all" as every channel; 0 for an unknown name.
+// "right_arm, head" as channel bits; nothing or "all" as every channel; 0 for an
+// unknown name.
 template <typename ModelType>
 int RBY1_ROS2_DRIVER<ModelType>::parse_stream_channels(
     const std::string &parameters) {
   static const std::pair<const char *, int> names[] = {
-      {"arm", CHANNEL_ARM},       {"torso", CHANNEL_TORSO},
-      {"mobile", CHANNEL_MOBILE}, {"head", CHANNEL_HEAD},
-      {"all", CHANNEL_ALL},       {".*", CHANNEL_ALL}};
+      {"right_arm", CHANNEL_RIGHT_ARM}, {"left_arm", CHANNEL_LEFT_ARM},
+      {"torso", CHANNEL_TORSO},         {"mobile", CHANNEL_MOBILE},
+      {"head", CHANNEL_HEAD},           {"all", CHANNEL_ALL},
+      {".*", CHANNEL_ALL}};
   int channels = 0;
   std::stringstream ss(parameters);
   std::string token;
@@ -3175,7 +3031,8 @@ template <typename ModelType>
 std::string RBY1_ROS2_DRIVER<ModelType>::stream_channel_names(int channels) {
   std::string text;
   for (const auto &[name, bit] :
-       {std::pair<const char *, int>{"arm", CHANNEL_ARM}, {"torso", CHANNEL_TORSO},
+       {std::pair<const char *, int>{"right_arm", CHANNEL_RIGHT_ARM},
+        {"left_arm", CHANNEL_LEFT_ARM}, {"torso", CHANNEL_TORSO},
         {"mobile", CHANNEL_MOBILE}, {"head", CHANNEL_HEAD}}) {
     if (channels & bit)
       text += std::string(text.empty() ? "" : ", ") + name;
@@ -3183,13 +3040,166 @@ std::string RBY1_ROS2_DRIVER<ModelType>::stream_channel_names(int channels) {
   return text;
 }
 
+// The channels (stream_channel bits) the parts (stream_part bits) go out on.
+template <typename ModelType>
+int RBY1_ROS2_DRIVER<ModelType>::channels_of_parts(int parts) {
+  return ((parts & STREAM_RIGHT_ARM) ? CHANNEL_RIGHT_ARM : 0) |
+         ((parts & STREAM_LEFT_ARM) ? CHANNEL_LEFT_ARM : 0) |
+         ((parts & STREAM_TORSO) ? CHANNEL_TORSO : 0) |
+         ((parts & STREAM_HEAD) ? CHANNEL_HEAD : 0);
+}
+
+template <typename ModelType>
+typename RBY1_ROS2_DRIVER<ModelType>::BodyStream &
+RBY1_ROS2_DRIVER<ModelType>::channel_stream(int channel) {
+  switch (channel) {
+  case CHANNEL_RIGHT_ARM:
+    return right_arm_stream_;
+  case CHANNEL_LEFT_ARM:
+    return left_arm_stream_;
+  case CHANNEL_TORSO:
+    return torso_stream_;
+  case CHANNEL_MOBILE:
+    return mobility_stream_;
+  case CHANNEL_HEAD:
+    return head_stream_;
+  default:
+    throw std::invalid_argument("not one stream channel: " + std::to_string(channel));
+  }
+}
+
 // Call with stream_mutex_ held.
 template <typename ModelType>
 int RBY1_ROS2_DRIVER<ModelType>::open_stream_channels() const {
-  return (arm_stream_.handler ? CHANNEL_ARM : 0) |
+  return (right_arm_stream_.handler ? CHANNEL_RIGHT_ARM : 0) |
+         (left_arm_stream_.handler ? CHANNEL_LEFT_ARM : 0) |
          (torso_stream_.handler ? CHANNEL_TORSO : 0) |
-         (mobility_stream_handler_ ? CHANNEL_MOBILE : 0) |
-         (head_stream_handler_ ? CHANNEL_HEAD : 0);
+         (mobility_stream_.handler ? CHANNEL_MOBILE : 0) |
+         (head_stream_.handler ? CHANNEL_HEAD : 0);
+}
+
+// Opens the channels `wanted` names (stream_channel bits). Nothing is opened unless
+// every one can be: a channel whose servo is off would take commands the robot
+// never carries out. Call with stream_mutex_ held.
+template <typename ModelType>
+std::string RBY1_ROS2_DRIVER<ModelType>::open_channels(int wanted) {
+  std::string blocked;
+  for (const auto &[channel, servos] :
+       {std::pair<int, const char *>{CHANNEL_RIGHT_ARM, "^right_arm_.*"},
+        {CHANNEL_LEFT_ARM, "^left_arm_.*"}, {CHANNEL_TORSO, "^torso_.*"},
+        {CHANNEL_MOBILE, ".*wheel.*"}, {CHANNEL_HEAD, "^head_.*"}}) {
+    if ((wanted & channel) && !robot_->IsServoOn(servos))
+      blocked += " " + stream_channel_names(channel) + " (its servo is off);";
+  }
+  if (!blocked.empty())
+    return "Cannot open stream channel:" + blocked +
+           " nothing was opened. Switch the servo on first.";
+  try {
+    // A stream opened right after one was closed comes up dead: it takes
+    // commands without an error and the robot does not move (none at 0.3 s).
+    std::this_thread::sleep_until(stream_closed_at_ + kStreamReopenGap);
+    for (int channel : kStreamChannels) {
+      if (!(wanted & channel))
+        continue;
+      BodyStream &stream = channel_stream(channel);
+      stream = BodyStream{};
+      stream.handler = robot_->CreateCommandStream(10);
+      stream.opened_at = std::chrono::steady_clock::now();
+      hold_current_pose(stream, channel);
+    }
+    stream_active_ = true;
+    return "";
+  } catch (const std::exception &e) {
+    close_stream_channels(wanted, false);
+    return std::string("Failed to activate stream control: ") + e.what();
+  }
+}
+
+// The first command on a channel just opened: its part, held where it is measured
+// (2026-10-26 user decision). The part is under the stream from the start, and a
+// client's first command finds a stream that already carries it. In the kind the
+// part's trajectory commands use -- joint impedance when set_trajectory_impedance
+// switched it on -- since the robot does not take a new command kind on a stream.
+// The mobile base has no pose to hold. Call with stream_mutex_ held.
+template <typename ModelType>
+void RBY1_ROS2_DRIVER<ModelType>::hold_current_pose(BodyStream &stream, int channel) {
+  if (channel == CHANNEL_MOBILE)
+    return;
+  const std::vector<unsigned int> *joints = nullptr;
+  int part = 0;
+  bool impedance = false;
+  const std::vector<double> *stiffness = nullptr;
+  switch (channel) {
+  case CHANNEL_RIGHT_ARM:
+    joints = &info_.right_arm_joint_idx;
+    part = STREAM_RIGHT_ARM;
+    impedance = trajectory_impedance_enabled_right_arm_;
+    stiffness = &trajectory_stiffness_right_arm_;
+    break;
+  case CHANNEL_LEFT_ARM:
+    joints = &info_.left_arm_joint_idx;
+    part = STREAM_LEFT_ARM;
+    impedance = trajectory_impedance_enabled_left_arm_;
+    stiffness = &trajectory_stiffness_left_arm_;
+    break;
+  case CHANNEL_TORSO:
+    joints = &info_.torso_joint_idx;
+    part = STREAM_TORSO;
+    impedance = trajectory_impedance_enabled_torso_;
+    stiffness = &trajectory_stiffness_torso_;
+    break;
+  case CHANNEL_HEAD:
+    joints = &info_.head_joint_idx;
+    part = STREAM_HEAD;
+    break;
+  }
+  const auto state = robot_->GetState();
+  Eigen::VectorXd q(joints->size());
+  for (size_t i = 0; i < joints->size(); ++i)
+    q[i] = state.position[(*joints)[i]];
+
+  rb::ComponentBasedCommandBuilder component;
+  if (channel == CHANNEL_HEAD) {
+    // The head has joint position only.
+    rb::JointPositionCommandBuilder b;
+    make_joint_pos_builder(b, q, kDefaultMinimumTime, 1e6);
+    component.SetHeadCommand(rb::HeadCommandBuilder(b));
+  } else {
+    rb::BodyComponentBasedCommandBuilder body;
+    auto set = [&](const auto &b) {
+      switch (channel) {
+      case CHANNEL_RIGHT_ARM:
+        body.SetRightArmCommand(rb::ArmCommandBuilder(b));
+        break;
+      case CHANNEL_LEFT_ARM:
+        body.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+        break;
+      default:
+        body.SetTorsoCommand(rb::TorsoCommandBuilder(b));
+        break;
+      }
+    };
+    if (impedance) {
+      Eigen::VectorXd k = Eigen::VectorXd::Constant(q.size(), kTrajectoryStiffness);
+      if (stiffness->size() == static_cast<size_t>(q.size()))
+        k = Eigen::Map<const Eigen::VectorXd>(stiffness->data(), stiffness->size());
+      rb::JointImpedanceControlCommandBuilder b;
+      make_joint_impedance_builder(b, q, kDefaultMinimumTime, 1e6, k,
+                                   trajectory_damping_ratio_,
+                                   trajectory_torque_limit_, 0.0, 0.0);
+      set(b);
+    } else {
+      rb::JointPositionCommandBuilder b;
+      make_joint_pos_builder(b, q, kDefaultMinimumTime, 1e6);
+      set(b);
+    }
+    component.SetBodyCommand(rb::BodyCommandBuilder(body));
+  }
+  rb::RobotCommandBuilder robot_cmd;
+  robot_cmd.SetCommand(component);
+  stream.handler->SendCommand(robot_cmd);
+  stream.parts = part;
+  stream.one_shot = false;
 }
 
 // Closes these channels and frees their parts; `cancel` also stops what they were
@@ -3213,20 +3223,24 @@ void RBY1_ROS2_DRIVER<ModelType>::close_stream_channels(int channels,
     for (auto part : parts)
       is_controlling_[part].store(false, std::memory_order_release);
   };
-  if (channels & CHANNEL_ARM) {
-    close(arm_stream_.handler);
-    release({PART_RIGHT_ARM, PART_LEFT_ARM});
+  if (channels & CHANNEL_RIGHT_ARM) {
+    close(right_arm_stream_.handler);
+    release({PART_RIGHT_ARM});
+  }
+  if (channels & CHANNEL_LEFT_ARM) {
+    close(left_arm_stream_.handler);
+    release({PART_LEFT_ARM});
   }
   if (channels & CHANNEL_TORSO) {
     close(torso_stream_.handler);
     release({PART_TORSO});
   }
   if (channels & CHANNEL_MOBILE) {
-    close(mobility_stream_handler_);
+    close(mobility_stream_.handler);
     release({PART_MOBILE});
   }
   if (channels & CHANNEL_HEAD) {
-    close(head_stream_handler_);
+    close(head_stream_.handler);
     release({PART_HEAD});
   }
   stream_active_ = open_stream_channels() != 0;
@@ -3350,45 +3364,93 @@ std::string RBY1_ROS2_DRIVER<ModelType>::send_body(BodyCommand &command,
                                                   double busy_for,
                                                   double wait_limit,
                                                   bool one_shot) {
-  const int arms = command.parts & (STREAM_RIGHT_ARM | STREAM_LEFT_ARM);
-  const int torso = command.parts & STREAM_TORSO;
-  if (arms != 0 && !arm_stream_.handler)
-    return "stream channel 'arm' is not open (stream_control with parameters: arm)";
-  if ((arms & ~arm_stream_.carries) != 0)
-    return "stream channel 'arm' carries only the arm whose servo was on when it "
-           "was opened; switch the other arm's servo on and open the channel again";
-  if (torso != 0 && !torso_stream_.handler)
-    return "stream channel 'torso' is not open (stream_control with parameters: torso)";
-  if ((arms != 0 && !fit_stream_to(arm_stream_, arms, busy_for, wait_limit, one_shot)) ||
-      (torso != 0 && !fit_stream_to(torso_stream_, torso, busy_for, wait_limit, one_shot)))
-    return "another command on the stream is still moving other parts; send again "
-           "when it is done";
+  const int body_parts =
+      command.parts & (STREAM_RIGHT_ARM | STREAM_LEFT_ARM | STREAM_TORSO);
+  if (const int closed = channels_of_parts(body_parts) & ~open_stream_channels())
+    return "stream channel '" + stream_channel_names(closed) +
+           "' is not open: open it with stream_control (parameters: " +
+           stream_channel_names(closed) + ") and send again";
 
-  auto send = [this](BodyStream &stream, const rb::BodyComponentBasedCommandBuilder &body,
-                     int parts) {
+  struct Send {
+    BodyStream *stream;
+    const rb::BodyComponentBasedCommandBuilder *body;
+    int part;
+    const char *channel;
+    std::exception_ptr error;
+  };
+  std::vector<Send> sends;
+  if (body_parts & STREAM_RIGHT_ARM)
+    sends.push_back({&right_arm_stream_, &command.right_arm, STREAM_RIGHT_ARM, "right_arm", {}});
+  if (body_parts & STREAM_LEFT_ARM)
+    sends.push_back({&left_arm_stream_, &command.left_arm, STREAM_LEFT_ARM, "left_arm", {}});
+  if (body_parts & STREAM_TORSO)
+    sends.push_back({&torso_stream_, &command.torso, STREAM_TORSO, "torso", {}});
+  // A stream that was cancelled or found expired is replaced, kStreamReopenGap after
+  // that: opened sooner, the new one comes up expired as well. The command waits
+  // for it (at most the gap), so a trajectory sent right after a cancel is not cut.
+  auto reopen = [this](BodyStream &stream, int part, const char *channel) {
+    std::this_thread::sleep_until(stream.expired_at + kStreamReopenGap);
+    stream.handler = robot_->CreateCommandStream(10);
+    stream.parts = part;
+    stream.expired_at = {};
+    RCLCPP_INFO(this->get_logger(),
+                "Command stream '%s' had ended (cancelled or expired); opened a new one",
+                channel);
+  };
+  for (auto &s : sends) {
+    if (s.stream->expired_at != std::chrono::steady_clock::time_point{})
+      reopen(*s.stream, s.part, s.channel);
+    if (!fit_stream_to(*s.stream, s.part, busy_for, wait_limit, one_shot))
+      return "another command on the stream is still moving other parts; send again "
+             "when it is done";
+  }
+
+  auto send_once = [](Send &s) {
     rb::ComponentBasedCommandBuilder component;
-    component.SetBodyCommand(rb::BodyCommandBuilder(body));
+    component.SetBodyCommand(rb::BodyCommandBuilder(*s.body));
     rb::RobotCommandBuilder robot_cmd;
     robot_cmd.SetCommand(component);
+    s.stream->handler->SendCommand(robot_cmd);
+  };
+  // The channels' commands go out at the same time. Each SendCommand is one SDK
+  // round trip (it waits for the robot's answer), so sent one after another they
+  // added up per cycle; side by side a cycle costs the longest one (2026-10-26).
+  const auto started = std::chrono::steady_clock::now();
+  auto run = [&send_once](Send &s) {
     try {
-      stream.handler->SendCommand(robot_cmd);
-    } catch (const std::exception &e) {
-      // Switched off and on again within ~0.1 s, a stream comes up expired: open a
-      // fresh one once.
-      if (std::string(e.what()).find("expired") == std::string::npos)
-        throw;
-      stream.handler = robot_->CreateCommandStream(10);
-      stream.parts = parts;
-      stream.handler->SendCommand(robot_cmd);
-      RCLCPP_WARN(this->get_logger(),
-                  "Command stream had expired; opened a new one");
+      send_once(s);
+    } catch (...) {
+      s.error = std::current_exception();
     }
   };
-  if (arms != 0)
-    send(arm_stream_, command.arms, arms);
-  if (torso != 0)
-    send(torso_stream_, command.torso, torso);
-  last_stream_command_time_ns_ = this->now().nanoseconds();
+  std::vector<std::thread> others;
+  for (size_t i = 1; i < sends.size(); ++i)
+    others.emplace_back(run, std::ref(sends[i]));
+  if (!sends.empty())
+    run(sends[0]);
+  for (auto &t : others)
+    t.join();
+  RCLCPP_DEBUG(this->get_logger(), "send_body: %zu channel(s) in %.2f ms",
+               sends.size(),
+               std::chrono::duration<double, std::milli>(
+                   std::chrono::steady_clock::now() - started)
+                   .count());
+  for (auto &s : sends) {
+    if (s.error) {
+      try {
+        std::rethrow_exception(s.error);
+      } catch (const std::exception &e) {
+        // The stream was found expired (ended by the robot, or by
+        // robot_->CancelControl()): a fresh one, after the gap, takes the command.
+        if (std::string(e.what()).find("expired") == std::string::npos)
+          throw;
+        s.stream->expired_at = std::chrono::steady_clock::now();
+        reopen(*s.stream, s.part, s.channel);
+        send_once(s);
+      }
+    }
+    s.stream->commanded = true;
+  }
   return "";
 }
 
@@ -3398,20 +3460,29 @@ std::string RBY1_ROS2_DRIVER<ModelType>::send_body(BodyCommand &command,
 template <typename ModelType>
 void RBY1_ROS2_DRIVER<ModelType>::send_head(
     const rb::ComponentBasedCommandBuilder &head) {
-  if (!head_stream_handler_)
+  if (!head_stream_.handler)
     throw std::runtime_error("the head command stream is not open");
-  try {
-    head_stream_handler_->SendCommand(rb::RobotCommandBuilder().SetCommand(head));
-  } catch (const std::exception &e) {
-    // Switched off and on again within ~0.1 s, a stream comes up expired.
-    if (std::string(e.what()).find("expired") == std::string::npos)
-      throw;
-    head_stream_handler_ = robot_->CreateCommandStream(10);
-    head_stream_handler_->SendCommand(rb::RobotCommandBuilder().SetCommand(head));
+  // An expired stream (robot_->CancelControl() ends every stream) is opened again
+  // only after the reopen gap, and the commands until then are dropped. Opened at
+  // once it comes up expired again, at every command: the head then stood still for
+  // good (simulator, 20 Hz commands: 103 reopenings in 5 s, no motion).
+  const auto now = std::chrono::steady_clock::now();
+  if (head_stream_.expired_at != std::chrono::steady_clock::time_point{}) {
+    if (now < head_stream_.expired_at + kStreamReopenGap)
+      return;
+    head_stream_.handler = robot_->CreateCommandStream(10);
+    head_stream_.expired_at = {};
     RCLCPP_WARN(this->get_logger(),
                 "[head] Command stream had expired; opened a new one");
   }
-  last_stream_command_time_ns_ = this->now().nanoseconds();
+  try {
+    head_stream_.handler->SendCommand(rb::RobotCommandBuilder().SetCommand(head));
+    head_stream_.commanded = true;
+  } catch (const std::exception &e) {
+    if (std::string(e.what()).find("expired") == std::string::npos)
+      throw;
+    head_stream_.expired_at = now;
+  }
 }
 
 // The parts a trajectory names a joint of (stream_part bits). Each goes on its own
@@ -3438,24 +3509,32 @@ int RBY1_ROS2_DRIVER<ModelType>::trajectory_parts(
 
 template <typename ModelType>
 void RBY1_ROS2_DRIVER<ModelType>::check_stream_safety() {
-  if (stream_active_) {
-    uint64_t now_ns = this->now().nanoseconds();
-    uint64_t last_ns = last_stream_command_time_ns_.load();
-    double elapsed = static_cast<double>(now_ns - last_ns) * 1e-9;
-    // An open stream nobody commands is closed after this long. Not sooner: a
-    // client that plans between commands must find its stream still open.
-    if (elapsed > kStreamIdleTimeout) {
-      RCLCPP_WARN(this->get_logger(),
-                  "\033[1;31m[STREAM TIMEOUT] No stream commands received for "
-                  "%.2f seconds! Deactivating all streams.\033[0m",
-                  elapsed);
-      deactivate_all_streams();
-      if (hardware_control_active_) {
-        hardware_control_active_ = false;
-        RCLCPP_WARN(this->get_logger(),
-                    "Hardware control released due to stream timeout.");
-      }
-    }
+  // A channel opened and then never commanded is closed after kStreamIdleTimeout:
+  // its client went away before it sent anything. Once commanded a channel stays
+  // open, each on its own (2026-10-26 user decision): its last command holds its
+  // part, and a client that plans for long between commands keeps its stream.
+  std::lock_guard<std::mutex> stream_lock(stream_mutex_);
+  if (!stream_active_)
+    return;
+  const auto now = std::chrono::steady_clock::now();
+  int idle = 0;
+  for (int channel : kStreamChannels) {
+    const BodyStream &stream = channel_stream(channel);
+    if (stream.handler && !stream.commanded &&
+        now - stream.opened_at > std::chrono::duration<double>(kStreamIdleTimeout))
+      idle |= channel;
+  }
+  if (idle == 0)
+    return;
+  RCLCPP_WARN(this->get_logger(),
+              "\033[1;31m[STREAM TIMEOUT] Stream channel '%s' got no command for "
+              "%.0f s after it was opened: closing it.\033[0m",
+              stream_channel_names(idle).c_str(), kStreamIdleTimeout);
+  close_stream_channels(idle, false);
+  if (!stream_active_ && hardware_control_active_) {
+    hardware_control_active_ = false;
+    RCLCPP_WARN(this->get_logger(),
+                "Hardware control released due to stream timeout.");
   }
 }
 
@@ -3482,8 +3561,8 @@ void RBY1_ROS2_DRIVER<ModelType>::set_trajectory_impedance_callback(
   }
   {
     std::lock_guard<std::mutex> stream_lock(stream_mutex_);
-    arm_stream_.kind_changed = arm_stream_.handler != nullptr;
-    torso_stream_.kind_changed = torso_stream_.handler != nullptr;
+    for (BodyStream *stream : {&right_arm_stream_, &left_arm_stream_, &torso_stream_})
+      stream->kind_changed = stream->handler != nullptr;
   }
 
   // For Torso
@@ -4084,14 +4163,12 @@ bool RBY1_ROS2_DRIVER<ModelType>::process_cartesian_part(
         rb::CommandHeaderBuilder().SetControlHoldTime(hold_time));
     b.SetMinimumTime(cmd.minimum_time);
 
-    double lin_vel = (cmd.linear_velocity_limit <= 0.0)
-                         ? robot_parameter_.linear_velocity_limit
-                         : cmd.linear_velocity_limit;
-    double ang_vel = (cmd.angular_velocity_limit <= 0.0)
-                         ? robot_parameter_.angular_velocity_limit
-                         : cmd.angular_velocity_limit;
+    double lin_vel = (cmd.linear_velocity_limit <= 0.0) ? kLinearVelocityLimit
+                                                        : cmd.linear_velocity_limit;
+    double ang_vel = (cmd.angular_velocity_limit <= 0.0) ? kAngularVelocityLimit
+                                                         : cmd.angular_velocity_limit;
     double acc_scale = (cmd.acceleration_limit_scaling <= 0.0)
-                           ? robot_parameter_.acceleration_limit
+                           ? kAccelerationLimit
                            : cmd.acceleration_limit_scaling;
 
     b.AddTarget(cmd.ref_link, cmd.target_link, T, lin_vel, ang_vel, acc_scale);
@@ -4273,7 +4350,7 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_stream_joint(
   //         //double req_accel = 2.0 * std::abs(target_pos - current_pos) / (dt
   //         * dt);
 
-  //         double limit = robot_parameter_.acceleration_limit;
+  //         double limit = kAccelerationLimit;
   //         if (dynamics_ && dyn_state_) {
   //             auto it = std::find(dyn_joint_names_.begin(),
   //             dyn_joint_names_.end(), joint_name); if (it !=
@@ -4343,11 +4420,11 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_stream_joint(
               });
     body_part(cmd.right_arm, trajectory_impedance_enabled_right_arm_,
               trajectory_stiffness_right_arm_, [&](const auto &b) {
-                body.arms.SetRightArmCommand(rb::ArmCommandBuilder(b));
+                body.right_arm.SetRightArmCommand(rb::ArmCommandBuilder(b));
               });
     body_part(cmd.left_arm, trajectory_impedance_enabled_left_arm_,
               trajectory_stiffness_left_arm_, [&](const auto &b) {
-                body.arms.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+                body.left_arm.SetLeftArmCommand(rb::ArmCommandBuilder(b));
               });
 
     if (!cmd.head.position.empty()) {
@@ -4365,11 +4442,12 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_stream_joint(
     }
 
     std::lock_guard<std::mutex> stream_lock(stream_mutex_);
-    if ((commanded_bits & STREAM_HEAD) && !head_stream_handler_) {
+    if ((commanded_bits & STREAM_HEAD) && !head_stream_.handler) {
       RCLCPP_WARN_THROTTLE(
           this->get_logger(), *this->get_clock(), 2000,
           "\033[1;33m[STREAM REJECTED] stream_joint ignored: stream channel "
-          "'head' is not open (stream_control with parameters: head).\033[0m");
+          "'head' is not open: open it with stream_control (parameters: head) "
+          "and send again.\033[0m");
       result->success = false;
       try {
         goal_handle->abort(result);
@@ -4663,11 +4741,11 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_stream_cartesian(
           });
         if (!cmd.right_arm.ref_link.empty())
           here(info_.right_arm_joint_idx, STREAM_RIGHT_ARM, [&](const auto &b) {
-            hold.arms.SetRightArmCommand(rb::ArmCommandBuilder(b));
+            hold.right_arm.SetRightArmCommand(rb::ArmCommandBuilder(b));
           });
         if (!cmd.left_arm.ref_link.empty())
           here(info_.left_arm_joint_idx, STREAM_LEFT_ARM, [&](const auto &b) {
-            hold.arms.SetLeftArmCommand(rb::ArmCommandBuilder(b));
+            hold.left_arm.SetLeftArmCommand(rb::ArmCommandBuilder(b));
           });
         try {
           std::lock_guard<std::mutex> stream_lock(stream_mutex_);
@@ -4742,7 +4820,7 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_stream_cartesian(
             .SetMinimumTime(cmd.right_arm.minimum_time <= 0.0
                                 ? 0.1
                                 : cmd.right_arm.minimum_time));
-    body.arms.SetRightArmCommand(right_builder);
+    body.right_arm.SetRightArmCommand(right_builder);
     body.parts |= STREAM_RIGHT_ARM;
   }
   if (!cmd.left_arm.ref_link.empty()) {
@@ -4755,7 +4833,7 @@ void RBY1_ROS2_DRIVER<ModelType>::execute_stream_cartesian(
             .SetMinimumTime(cmd.left_arm.minimum_time <= 0.0
                                 ? 0.1
                                 : cmd.left_arm.minimum_time));
-    body.arms.SetLeftArmCommand(left_builder);
+    body.left_arm.SetLeftArmCommand(left_builder);
     body.parts |= STREAM_LEFT_ARM;
   }
 

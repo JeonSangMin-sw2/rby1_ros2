@@ -18,6 +18,7 @@ find_package(Eigen3 REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 # The library: object specs, YAML files, the planning-scene client and the modules.
 # The executables are thin; other packages can link it too.
@@ -40,7 +41,7 @@ target_link_libraries(scene ${PROJECT_NAME})
 
 add_executable(publish_objects src/publish_objects.cpp)
 target_link_libraries(publish_objects ${PROJECT_NAME})
-ament_target_dependencies(publish_objects ament_index_cpp)
+ament_target_dependencies(publish_objects ament_index_cpp sensor_msgs)
 
 add_executable(object_at_point src/object_at_point.cpp)
 target_link_libraries(object_at_point ${PROJECT_NAME})
@@ -62,7 +63,8 @@ if(BUILD_TESTING)
   ament_add_gtest(test_modules test/test_modules.cpp)
   target_link_libraries(test_modules ${PROJECT_NAME})
   target_compile_definitions(test_modules PRIVATE
-    EXAMPLE_OBJECTS="${CMAKE_CURRENT_SOURCE_DIR}/config/objects.yaml")
+    EXAMPLE_OBJECTS="${CMAKE_CURRENT_SOURCE_DIR}/config/objects.yaml"
+    GRIPPER_OBJECTS="${CMAKE_CURRENT_SOURCE_DIR}/config/gripper.yaml")
   ament_add_gtest(test_point_object test/test_point_object.cpp)
   target_link_libraries(test_point_object ${PROJECT_NAME})
   target_compile_definitions(test_point_object PRIVATE

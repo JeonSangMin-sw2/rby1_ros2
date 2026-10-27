@@ -10,4 +10,4 @@ rby1_target_executor:
     ready:
       right_arm: [0.0, -0.5, 0.0, -1.57, 0.0, 0.0, 0.0]   # elbow bent 90 deg, arm forward
       left_arm: [0.0, 0.5, 0.0, -1.57, 0.0, 0.0, 0.0]
-      torso: [0.0, 0.1, -0.2, 0.1, 0.0, 0.0]              # knee bent a little, chest upright
+      torso: [0.0, 0.5, -1.0, 0.5, 0.0, 0.0]              # knee bent ~57 deg, chest level (as rby1_cumotion's)

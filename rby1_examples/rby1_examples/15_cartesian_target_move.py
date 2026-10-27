@@ -35,7 +35,7 @@ How a target is carried out is chosen with `mode`:
                  never run more than `lead` ahead of where the hand is measured: the
                  driver refuses a step that asks a joint for more than its
                  acceleration limit and holds the arm there, which is what a target
-                 far from the hand does. Opens the 'arm' stream channel for a move
+                 far from the hand does. Opens the arm's stream channel for a move
                  and closes it again after it, also on Ctrl+C.
 
 The tool frame follows from the arm `target_topic` names: ee_right for
@@ -51,8 +51,8 @@ Sequence:
 Watch: READY, then for every target EXECUTING ... and DONE with "hand is 0.4 mm
 from the target" under it, or FAILED: <reason>.
 
-Try it with example 16, which publishes two poses in turn (the ready pose and
-30 cm above it), each in its own terminal:
+Try it with example 16, which publishes two poses in turn (12 cm below the
+right hand at the ready pose, and 50 cm above that), each in its own terminal:
   ros2 run rby1_examples 15_cartesian_target_move
   ros2 run rby1_examples 16_target_shuttle_publisher
   ros2 topic echo /rby1/right_arm/target_status std_msgs/msg/String
@@ -313,7 +313,7 @@ class CartesianTargetMove(Node):
     def switch_stream(self, on):
         if not self.stream_client.wait_for_service(timeout_sec=10.0):
             raise TimeoutError('stream_control unavailable -- is the RB-Y1 driver running?')
-        future = self.stream_client.call_async(StateOnOff.Request(state=on, parameters='arm'))
+        future = self.stream_client.call_async(StateOnOff.Request(state=on, parameters=self.arm))
         self.wait(future.done, 10.0, 'stream_control')
         if not future.result().success:
             raise RuntimeError(f'stream_control: {future.result().message}')

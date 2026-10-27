@@ -302,6 +302,10 @@ MoveIt Setup Assistant로 뼈대 설정 패키지(예: `rby1_moveit_m_1_2`)를 �
     ```
 
 ### 6.3 `config/<robot_model>.ros2_control.xacro` (그리퍼 조인트 제외 및 Xacro 경고 수정)
+> [!NOTE]
+> 2026-10-16부터 `rby1_description` URDF와 MoveIt 패키지에 그리퍼가 없습니다(그리퍼는 `rby1_moveit_objects`의 `gripper.yaml` 모듈).
+> 아래 그리퍼 조인트 삭제는 그 전 URDF로 패키지를 만들 때의 절차입니다.
+
 - **수정 목적**:
   1. **그리퍼 조인트 배제**: RBY1 SDK의 실시간 gRPC 26자유도 스트리밍 제어 대상 조인트에 그리퍼 핑거 조인트(`gripper_finger_l1` 등)는 포함되지 않습니다. 그리퍼는 드라이버 서비스/액션으로 별도 제어되므로, ros2_control 조인트 설정에 그리퍼가 포함되어 있으면 하드웨어 인터페이스 플러그인이 정상 작동하지 않습니다.
   2. **Xacro 경고 수정**: ROS 2 Humble 버전에서 `load_yaml` 사용 시 발생하는 Deprecation 경고를 제거합니다.
@@ -412,6 +416,9 @@ MoveIt Setup Assistant로 뼈대 설정 패키지(예: `rby1_moveit_m_1_2`)를 �
 - **해결책**: 조인트가 중복되는 상위 결합 컨트롤러는 `controller_manager`의 기본 자동 시작 활성 목록에서 제외하고, MoveIt 제어 시에는 독립적인 비중복 컨트롤러들(`left_arm_controller`, `right_arm_controller`, `torso_controller`, `head_controller`)만 활성화하여 사용하도록 설계합니다.
 
 ### 7.7 그리퍼 핑거 조인트 배제 및 상태 유실 경고
+> [!NOTE]
+> 2026-10-16부터 URDF에 그리퍼 조인트가 없어 이 경고는 나오지 않습니다.
+
 - **현상**: MoveIt 실행 후 `The complete state of the robot is not yet known. Missing gripper_finger_l1, ...` 경고가 주기적으로 출력되는 현상.
 - **원인**: RBY1 SDK의 스트림 제어 조인트(26자유도 상체) 목록에 그리퍼 핑거 조인트가 포함되어 있지 않기 때문에, `ros2_control` 하드웨어 인터페이스 설정에서 그리퍼 조인트를 삭제해야 플러그인이 정상 작동합니다. 이로 인해 `joint_state_broadcaster`가 그리퍼 조인트 상태를 토픽으로 발행하지 않아 MoveIt이 미정의 조인트 상태로 인식해 경고를 출력합니다.
 - **해결책**: 그리퍼는 MoveIt의 실시간 Trajectory 제어 대상이 아니며, 드라이버가 제공하는 별도의 Action/Service로 제어되므로 해당 경고는 동작 제어에 무해하므로 무시해도 무방합니다.

@@ -73,8 +73,9 @@ constexpr double kJointTolerance = 1e-4;
 // MoveIt returns an empty trajectory for a goal its start already meets. With the joint
 // goal within this of the arm (rad; under 1 mm at the hand) that is DONE, not a failure.
 constexpr double kAlreadyThere = 1e-3;
-// The driver's stream channel an arm trajectory goes out on (stream_control's parameters).
-constexpr char kStreamChannel[] = "arm";
+// The driver's stream channels an arm trajectory goes out on (stream_control's parameters): both
+// arms' -- the executor plans for either arm, or both.
+constexpr char kStreamChannel[] = "right_arm, left_arm";
 // The SRDF group a move of both arms is planned in; one arm's is planned in its own.
 constexpr char kBothArms[] = "both_arms";
 // How many times a target is planned when MoveIt refuses the path it planned

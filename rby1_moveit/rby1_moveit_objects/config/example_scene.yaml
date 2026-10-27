@@ -8,10 +8,10 @@ objects:
     size: [0.6, 1.2, 0.7]
   - name: post
     type: cylinder
-    xyz: [0.5, -0.5, 0.9]
+    xyz: [0.5, -0.5, 0.818]
     radius: 0.04
     height: 0.6
   - name: ball
     type: sphere
-    xyz: [0.45, 0.35, 1.0]
+    xyz: [0.45, 0.35, 0.918]
     radius: 0.06
