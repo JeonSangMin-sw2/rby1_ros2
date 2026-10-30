@@ -64,7 +64,7 @@ if(BUILD_TESTING)
   target_link_libraries(test_modules ${PROJECT_NAME})
   target_compile_definitions(test_modules PRIVATE
     EXAMPLE_OBJECTS="${CMAKE_CURRENT_SOURCE_DIR}/config/objects.yaml"
-    GRIPPER_OBJECTS="${CMAKE_CURRENT_SOURCE_DIR}/config/gripper.yaml")
+    GRIPPER_OBJECTS="${CMAKE_CURRENT_SOURCE_DIR}/../../rby1_tools/model/rby1_gripper/gripper.yaml")
   ament_add_gtest(test_point_object test/test_point_object.cpp)
   target_link_libraries(test_point_object ${PROJECT_NAME})
   target_compile_definitions(test_point_object PRIVATE

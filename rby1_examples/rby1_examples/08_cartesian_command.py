@@ -15,7 +15,7 @@ Sequence:
   5. Wait for the action to complete and report the result.
 
 Run:
-  ros2 run rby1_examples cartesian_command
+  ros2 run rby1_examples 08_cartesian_command
 
 Actions used:
   - robot_joint      (Rby1JointCommand)
@@ -27,7 +27,7 @@ Services used:
   - get_cartesian_pose   (GetCartesianPose)
 
 Topics subscribed:
-  - joint_states/robot_state  (RobotState)
+  - robot_state  (rby1_msgs/RobotState)
 """
 import time
 import rclpy

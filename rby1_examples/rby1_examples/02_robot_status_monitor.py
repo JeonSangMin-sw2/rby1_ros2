@@ -7,17 +7,19 @@ topics published by the RBY1 driver and renders a premium dynamic
 dashboard to the terminal at 10 Hz.
 
 Run:
-  ros2 run rby1_examples 03_robot_status_monitor
+  ros2 run rby1_examples 02_robot_status_monitor
 
 Topics subscribed:
   - robot_state       (RobotState)
   - battery_state     (sensor_msgs/BatteryState)
-  - tool_flange/left/{imu, wrench, status}
-  - tool_flange/right/{imu, wrench, status}
+  - tool_flange/left/{imu, wrench}
+  - tool_flange/right/{imu, wrench}  (voltage, switch and connection are in robot_state)
 """
 import rclpy
+from rclpy.executors import ExternalShutdownException
+from rclpy.signals import SignalHandlerOptions
 from rclpy.node import Node
-from rby1_msgs.msg import RobotState, ToolFlangeStatus
+from rby1_msgs.msg import RobotState
 from sensor_msgs.msg import BatteryState, Imu
 from geometry_msgs.msg import WrenchStamped
 import sys
@@ -47,15 +49,11 @@ class RobotStatusMonitor(Node):
             Imu, 'tool_flange/left/imu', lambda msg: self.tf_imu_callback(msg, 'Left'), 10)
         self.tf_left_wrench_sub = self.create_subscription(
             WrenchStamped, 'tool_flange/left/wrench', lambda msg: self.tf_wrench_callback(msg, 'Left'), 10)
-        self.tf_left_status_sub = self.create_subscription(
-            ToolFlangeStatus, 'tool_flange/left/status', lambda msg: self.tf_status_callback(msg, 'Left'), 10)
 
         self.tf_right_imu_sub = self.create_subscription(
             Imu, 'tool_flange/right/imu', lambda msg: self.tf_imu_callback(msg, 'Right'), 10)
         self.tf_right_wrench_sub = self.create_subscription(
             WrenchStamped, 'tool_flange/right/wrench', lambda msg: self.tf_wrench_callback(msg, 'Right'), 10)
-        self.tf_right_status_sub = self.create_subscription(
-            ToolFlangeStatus, 'tool_flange/right/status', lambda msg: self.tf_status_callback(msg, 'Right'), 10)
 
         # Timer for 10 Hz dynamic console updates
         self.timer = self.create_timer(0.1, self.render_dashboard)
@@ -86,6 +84,8 @@ class RobotStatusMonitor(Node):
 
     def robot_state_callback(self, msg):
         self.robot_state_msg = msg
+        self.tf_left_status = msg.tool_flange_left
+        self.tf_right_status = msg.tool_flange_right
 
     def battery_callback(self, msg):
         self.battery_msg = msg
@@ -102,11 +102,6 @@ class RobotStatusMonitor(Node):
         else:
             self.tf_right_wrench = msg
 
-    def tf_status_callback(self, msg, side):
-        if side == 'Left':
-            self.tf_left_status = msg
-        else:
-            self.tf_right_status = msg
 
     def render_dashboard(self):
         # Clear screen and return cursor to top-left
@@ -150,8 +145,7 @@ class RobotStatusMonitor(Node):
             print(f"  Left Arm:  [{format_brakes(msg.brake_state.left_arm)}]")
             print(f"  Head:      [{format_brakes(msg.brake_state.head)}]")
             
-            if len(msg.tool_flange_state) >= 2:
-                print(f"Tool Flanges Conn:     Left={msg.tool_flange_state[0]}, Right={msg.tool_flange_state[1]}")
+            print(f"Tool Flanges Conn:     Left={msg.tool_flange_left.connected}, Right={msg.tool_flange_right.connected}")
         else:
             print("Control Manager State: \033[1;33mWaiting for robot_state topic...\033[0m")
             
@@ -190,24 +184,26 @@ class RobotStatusMonitor(Node):
                     print(f"  IMU Gyro:      {g} rad/s")
                     print(f"  IMU Accel:     {a} m/s^2")
                 if status:
-                    print(f"  Output Volt:   {status.output_voltage} mV | Switch A: {status.switch_a}")
-                    print(f"  Digital I/O:   Inputs: [A={status.digital_input_a}, B={status.digital_input_b}] | Outputs: [A={status.digital_output_a}, B={status.digital_output_b}]")
+                    print(f"  Output Volt:   {status.output_voltage} V | Switch A: {status.switch_a}")
             else:
                 print(f"Tool Flange [{side}]:  \033[1;33mNo connection or waiting for topic...\033[0m")
         print("=" * 65)
 
 def main(args=None):
-    rclpy.init(args=args)
+    # Ctrl+C is a plain KeyboardInterrupt: rclpy's own handler can shut the context down in the
+    # middle of a spin, which ends in an RCLError instead of a clean exit.
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = RobotStatusMonitor()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         # Clear screen on exit
         print("\033[H\033[J", end="", flush=True)
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

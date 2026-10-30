@@ -18,6 +18,7 @@ Run:
 import time
 import math
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rby1_msgs.action import Rby1JointCommand, StreamJoint
@@ -360,7 +361,7 @@ def main(args=None):
                 node.send_joint_stream(node.zero_torso, node.zero_right, node.zero_left, node.zero_head, dt)
                 node.spin_sleep(dt)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         node.get_logger().info('KeyboardInterrupt received. Shutting down...')
     finally:
         # Stop background thread
@@ -370,7 +371,8 @@ def main(args=None):
             node.get_logger().info('Cleaning up: Deactivating stream control...')
             node.toggle_stream(False)
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

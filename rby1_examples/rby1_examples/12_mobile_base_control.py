@@ -34,6 +34,7 @@ Run:
 """
 import time
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from geometry_msgs.msg import Twist
@@ -203,7 +204,8 @@ def main(args=None):
     if not controller.ensure_robot_ready():
         controller.get_logger().error('Failed to prepare robot. Exiting.')
         controller.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
         return
 
     # 1. Send Prepare Posture Goal (Wait for completion while stream is inactive)
@@ -216,14 +218,16 @@ def main(args=None):
     if not controller.send_pose_goal(torso_pos, right_pos, left_pos, head_pos, POSE_MINIMUM_TIME):
         controller.get_logger().error('Failed to reach zero position. Exiting.')
         controller.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
         return
 
     # 2. Activate Stream Control (Now safe because single command is done)
     if not controller.activate_stream_control(True):
         controller.get_logger().error('Failed to activate stream control. Exiting.')
         controller.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
         return
     time.sleep(1.0)
     controller.get_logger().info('Stream activated. Starting mobile base control...')
@@ -320,7 +324,7 @@ def main(args=None):
         # Final Stop
         controller.get_logger().info('Stopping base movement.')
         controller.send_velocity(0.0, 0.0, 0.0)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         # Turn stream OFF on exit

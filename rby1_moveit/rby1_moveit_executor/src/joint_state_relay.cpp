@@ -1,4 +1,4 @@
-// Republish the driver's joint states (/rby1/joint_states) on /joint_states.
+// Republish the driver's joint states (/rby1/joint_overall_states) on /joint_states.
 //
 // The driver publishes with sensor-data QoS (best effort); move_group and
 // robot_state_publisher subscribe reliably, which does not match -- a plain remapping
@@ -9,7 +9,7 @@
 class JointStateRelay : public rclcpp::Node {
 public:
   JointStateRelay() : rclcpp::Node("rby1_moveit_joint_state_relay") {
-    const auto source = declare_parameter("source", "/rby1/joint_states");
+    const auto source = declare_parameter("source", "/rby1/joint_overall_states");
     const auto target = declare_parameter("target", "/joint_states");
     if (source == target) throw std::invalid_argument("source and target must differ, or the relay feeds itself");
     publisher_ = create_publisher<sensor_msgs::msg::JointState>(target, 10);

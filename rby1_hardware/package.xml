@@ -17,6 +17,15 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
 
+  <!-- launch/rby1_hardware.launch.py: ros2_control without MoveIt -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

@@ -10,7 +10,7 @@ If a collision is detected during motion:
   3. Cancels the recovery goal as soon as collision == False, stopping the robot safely.
 
 Run:
-  ros2 run rby1_examples 15_collision_safety_control
+  ros2 run rby1_examples 14_collision_safety_control
 """
 import sys
 import time
@@ -18,9 +18,8 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rby1_msgs.action import Rby1JointCommand
-from rby1_msgs.msg import JointCommand, RobotState
+from rby1_msgs.msg import JointCommand, PartJointStates, RobotState
 from rby1_msgs.srv import StateOnOff
-from sensor_msgs.msg import JointState
 
 # Values to change: edit these to adjust the example.
 # Zero pose, the safe pose the robot starts from
@@ -37,6 +36,7 @@ COLLIDING_MINIMUM_TIME = 8.0                                 # s
 RECOVERY_DELAY = 0.5                                         # s between canceling the command and recovering
 RECOVERY_MINIMUM_TIME = 5.0                                  # s
 GOAL_PRIORITY = 10                                           # of every goal here
+
 
 class CollisionSafetyExample(Node):
     def __init__(self):
@@ -55,28 +55,18 @@ class CollisionSafetyExample(Node):
         self.left_arm_pos = None
         self.head_pos = None
 
-        self.torso_sub = self.create_subscription(
-            JointState, 'joint_states/torso', lambda msg: self.joint_state_callback(msg, 'torso'), 10)
-        self.right_arm_sub = self.create_subscription(
-            JointState, 'joint_states/right_arm', lambda msg: self.joint_state_callback(msg, 'right_arm'), 10)
-        self.left_arm_sub = self.create_subscription(
-            JointState, 'joint_states/left_arm', lambda msg: self.joint_state_callback(msg, 'left_arm'), 10)
-        self.head_sub = self.create_subscription(
-            JointState, 'joint_states/head', lambda msg: self.joint_state_callback(msg, 'head'), 10)
+        self.part_state_sub = self.create_subscription(
+            PartJointStates, 'joint_states', self.part_state_callback, 10)
 
     def state_callback(self, msg):
         self.control_state = msg.control_manager_state
         self.collision = msg.collision
 
-    def joint_state_callback(self, msg, part_name):
-        if part_name == 'torso':
-            self.torso_pos = list(msg.position)
-        elif part_name == 'right_arm':
-            self.right_arm_pos = list(msg.position)
-        elif part_name == 'left_arm':
-            self.left_arm_pos = list(msg.position)
-        elif part_name == 'head':
-            self.head_pos = list(msg.position)
+    def part_state_callback(self, msg):
+        self.torso_pos = list(msg.torso.position)
+        self.right_arm_pos = list(msg.right_arm.position)
+        self.left_arm_pos = list(msg.left_arm.position)
+        self.head_pos = list(msg.head.position)
 
     def wait_for_state(self, target_states, timeout=5.0):
         start_time = self.get_clock().now()

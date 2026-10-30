@@ -80,7 +80,7 @@ RBY1SystemHardware::on_init(const hardware_interface::HardwareInfo &info) {
   hw_commands_.resize(info_.joints.size(), 0.0);
   hw_positions_.resize(info_.joints.size(), 0.0);
   hw_velocities_.resize(info_.joints.size(), 0.0);
-  joint_name_to_sdk_index_.resize(info_.joints.size(), 0);
+  joint_name_to_sdk_index_.assign(info_.joints.size(), -1);
 
   // Check joint interface configuration
   for (const auto &joint : info_.joints) {
@@ -123,7 +123,7 @@ RBY1SystemHardware::on_init(const hardware_interface::HardwareInfo &info) {
   node_ = std::make_shared<rclcpp::Node>("rby1_hardware_node");
 
   joint_state_sub_ = node_->create_subscription<sensor_msgs::msg::JointState>(
-      driver_ns_prefix_ + "/joint_states", 10,
+      driver_ns_prefix_ + "/joint_overall_states", 10,
       std::bind(&RBY1SystemHardware::joint_state_callback, this,
                 std::placeholders::_1));
   cmd_vel_sub_ = node_->create_subscription<geometry_msgs::msg::Twist>(
@@ -222,10 +222,15 @@ hardware_interface::CallbackReturn RBY1SystemHardware::on_activate(
   }
   auto request = std::make_shared<rby1_msgs::srv::StateOnOff::Request>();
   request->state = true;
-  auto future = hardware_control_client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(node_, future,
-                                         std::chrono::seconds(2)) ==
-      rclcpp::FutureReturnCode::SUCCESS) {
+  // The first answer can be lost while the client is still being matched with the
+  // driver's service (seen on a restart of the controller manager): ask up to 3 times.
+  rclcpp::Client<rby1_msgs::srv::StateOnOff>::SharedFuture future;
+  rclcpp::FutureReturnCode claimed = rclcpp::FutureReturnCode::TIMEOUT;
+  for (int attempt = 0; attempt < 3 && claimed != rclcpp::FutureReturnCode::SUCCESS; ++attempt) {
+    future = hardware_control_client_->async_send_request(request).future.share();
+    claimed = rclcpp::spin_until_future_complete(node_, future, std::chrono::seconds(2));
+  }
+  if (claimed == rclcpp::FutureReturnCode::SUCCESS) {
     auto response = future.get();
     if (response->success) {
       RCLCPP_INFO(rclcpp::get_logger("RBY1SystemHardware"),
@@ -322,9 +327,8 @@ hardware_interface::CallbackReturn RBY1SystemHardware::on_activate(
       return hardware_interface::CallbackReturn::ERROR;
     }
 
-    unsigned int sdk_idx =
-        std::distance(robot_info.joint_infos.begin(), joint_it);
-    joint_name_to_sdk_index_[i] = sdk_idx;
+    joint_name_to_sdk_index_[i] =
+        static_cast<int>(std::distance(robot_info.joint_infos.begin(), joint_it));
   }
 
   // Setup joint prefix classification lists
@@ -452,11 +456,12 @@ hardware_interface::CallbackReturn RBY1SystemHardware::on_activate(
   std::vector<double> sdk_positions, sdk_velocities, sdk_torques;
   robot_->get_joint_states(sdk_positions, sdk_velocities, sdk_torques);
   for (size_t i = 0; i < info_.joints.size(); ++i) {
-    unsigned int sdk_idx = joint_name_to_sdk_index_[i];
-    hw_positions_[i] = sdk_positions[sdk_idx];
-    hw_velocities_[i] = sdk_velocities[sdk_idx];
-    hw_commands_[i] =
-        hw_positions_[i]; // Commanded targets initialized to current positions
+    const int sdk_idx = joint_name_to_sdk_index_[i];
+    if (sdk_idx >= 0) {
+      hw_positions_[i] = sdk_positions[sdk_idx];
+      hw_velocities_[i] = sdk_velocities[sdk_idx];
+    }
+    hw_commands_[i] = hw_positions_[i];  // commanded targets start at the current positions
   }
 
   RCLCPP_INFO(rclcpp::get_logger("RBY1SystemHardware"),
@@ -482,20 +487,25 @@ hardware_interface::CallbackReturn RBY1SystemHardware::on_deactivate(
     io_worker_thread_.join();
   }
 
+  if (robot_) {
+    // The robot refuses to disable while a control is running, and a cancel ends on
+    // the robot asynchronously: cancel, drop the streams, wait for idle, then disable.
+    robot_->cancel_control();
+    robot_->close_stream();
+    for (int i = 0; i < 40 && !robot_->is_control_idle(); ++i)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (!robot_->disable_control_manager())
+      RCLCPP_WARN(rclcpp::get_logger("RBY1SystemHardware"),
+                  "Could not disable the Control Manager at deactivation");
+    robot_->disconnect();
+    robot_.reset();
+  }
+
   if (hardware_control_client_->service_is_ready()) {
     auto request = std::make_shared<rby1_msgs::srv::StateOnOff::Request>();
     request->state = false;
     auto future = hardware_control_client_->async_send_request(request);
     rclcpp::spin_until_future_complete(node_, future, std::chrono::seconds(2));
-  }
-
-  if (robot_) {
-    robot_->close_stream();
-    robot_->disable_control_manager();
-    robot_->cancel_control();
-
-    robot_->disconnect();
-    robot_.reset();
   }
 
   RCLCPP_INFO(rclcpp::get_logger("RBY1SystemHardware"),
@@ -541,9 +551,13 @@ RBY1SystemHardware::read(const rclcpp::Time & /*time*/,
     robot_->get_joint_states(sdk_positions, sdk_velocities, sdk_torques);
     if (sdk_positions.size() >= (size_t)robot_->get_dof()) {
       for (size_t i = 0; i < info_.joints.size(); ++i) {
-        unsigned int sdk_idx = joint_name_to_sdk_index_[i];
-        hw_positions_[i] = sdk_positions[sdk_idx];
-        hw_velocities_[i] = sdk_velocities[sdk_idx];
+        const int sdk_idx = joint_name_to_sdk_index_[i];
+        if (sdk_idx >= 0) {
+          hw_positions_[i] = sdk_positions[sdk_idx];
+          hw_velocities_[i] = sdk_velocities[sdk_idx];
+        } else {
+          hw_positions_[i] = hw_commands_[i];  // a joint the robot has not: it is where it was told
+        }
       }
     }
     for (size_t i = 0; i < info_.joints.size(); ++i) {
@@ -570,6 +584,8 @@ RBY1SystemHardware::read(const rclcpp::Time & /*time*/,
 
   // Initialize command targets to read actual positions
   for (size_t i = 0; i < info_.joints.size(); ++i) {
+    if (joint_name_to_sdk_index_[i] < 0)
+      hw_positions_[i] = hw_commands_[i];  // a joint the robot has not: it is where it was told
     hw_commands_[i] = hw_positions_[i];
   }
 
@@ -589,15 +605,17 @@ RBY1SystemHardware::write(const rclcpp::Time & /*time*/,
 
   // Populate actual sdk_positions from hw_positions_
   for (size_t i = 0; i < info_.joints.size(); ++i) {
-    unsigned int sdk_idx = joint_name_to_sdk_index_[i];
-    sdk_positions[sdk_idx] = hw_positions_[i];
+    const int sdk_idx = joint_name_to_sdk_index_[i];
+    if (sdk_idx >= 0)
+      sdk_positions[sdk_idx] = hw_positions_[i];
   }
   sdk_target_positions = sdk_positions;
 
   // Fill in active commands from ros2_control
   for (size_t i = 0; i < info_.joints.size(); ++i) {
-    unsigned int sdk_idx = joint_name_to_sdk_index_[i];
-    sdk_target_positions[sdk_idx] = hw_commands_[i];
+    const int sdk_idx = joint_name_to_sdk_index_[i];
+    if (sdk_idx >= 0)
+      sdk_target_positions[sdk_idx] = hw_commands_[i];
   }
 
   // Predictive collision checking

@@ -13,7 +13,7 @@ Sequence:
   3. Send Zero Pose goal and wait for completion.
 
 Run:
-  ros2 run rby1_examples joint_command
+  ros2 run rby1_examples 07_joint_command
 
 Actions used:
   - robot_joint  (Rby1JointCommand)
@@ -23,7 +23,7 @@ Services used:
   - robot_servo  (StateOnOff)
 
 Topics subscribed:
-  - joint_states/robot_state  (RobotState)
+  - robot_state  (rby1_msgs/RobotState)
 """
 import time
 import rclpy

@@ -17,7 +17,7 @@ Sequence:
   4. Wait for the action to complete and report the result.
 
 Run:
-  ros2 run rby1_examples multi_controls
+  ros2 run rby1_examples 09_multi_controls
 
 Actions used:
   - robot_joint      (Rby1JointCommand)
@@ -28,7 +28,7 @@ Services used:
   - robot_servo  (StateOnOff)
 
 Topics subscribed:
-  - joint_states/robot_state  (RobotState)
+  - robot_state  (rby1_msgs/RobotState)
 """
 import time
 import rclpy

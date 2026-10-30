@@ -6,20 +6,22 @@ A unified utility that demonstrates both tool flange power control and continuou
 state monitoring. Renders a dynamic real-time console dashboard at 10 Hz.
 
 Run:
-  ros2 run rby1_examples 04_tool_flange_monitoring
+  ros2 run rby1_examples 03_tool_flange_monitoring
 
 Services used:
   - tool_flange_power (StateOnOff)
 
 Topics subscribed:
-  - tool_flange/left/{imu, wrench, status}
-  - tool_flange/right/{imu, wrench, status}
+  - tool_flange/left/{imu, wrench}
+  - tool_flange/right/{imu, wrench}  (voltage, switch and connection are in robot_state)
 """
 import sys
 import time
 import rclpy
+from rclpy.executors import ExternalShutdownException
+from rclpy.signals import SignalHandlerOptions
 from rclpy.node import Node
-from rby1_msgs.msg import ToolFlangeStatus, RobotState
+from rby1_msgs.msg import RobotState
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import WrenchStamped
 from rby1_msgs.srv import StateOnOff, ControlManagerCommand
@@ -54,20 +56,16 @@ class ToolFlangeMonitoring(Node):
             Imu, 'tool_flange/left/imu', lambda msg: self.tf_imu_callback(msg, 'Left'), 10)
         self.tf_left_wrench_sub = self.create_subscription(
             WrenchStamped, 'tool_flange/left/wrench', lambda msg: self.tf_wrench_callback(msg, 'Left'), 10)
-        self.tf_left_status_sub = self.create_subscription(
-            ToolFlangeStatus, 'tool_flange/left/status', lambda msg: self.tf_status_callback(msg, 'Left'), 10)
 
         self.tf_right_imu_sub = self.create_subscription(
             Imu, 'tool_flange/right/imu', lambda msg: self.tf_imu_callback(msg, 'Right'), 10)
         self.tf_right_wrench_sub = self.create_subscription(
             WrenchStamped, 'tool_flange/right/wrench', lambda msg: self.tf_wrench_callback(msg, 'Right'), 10)
-        self.tf_right_status_sub = self.create_subscription(
-            ToolFlangeStatus, 'tool_flange/right/status', lambda msg: self.tf_status_callback(msg, 'Right'), 10)
 
         # Verify tool flange topics are active
-        if not self.verify_topic_active('tool_flange/left/status', timeout=5.0):
+        if not self.verify_topic_active('tool_flange/left/imu', timeout=5.0):
             self.get_logger().error(
-                "Error: Topic 'tool_flange/left/status' is not active!\n"
+                "Error: Topic 'tool_flange/left/imu' is not active!\n"
                 "Please make sure the RBY1 ROS 2 driver is running and 'publish_tool_flange_state: true' is set in driver_parameters.yaml."
             )
             sys.exit(1)
@@ -169,7 +167,9 @@ class ToolFlangeMonitoring(Node):
 
     def state_callback(self, msg):
         self.control_state = msg.control_manager_state
-        self.tool_flange_connected = msg.tool_flange_state
+        self.tool_flange_connected = [msg.tool_flange_left.connected, msg.tool_flange_right.connected]
+        self.tf_left_status = msg.tool_flange_left
+        self.tf_right_status = msg.tool_flange_right
 
     def tf_imu_callback(self, msg, side):
         if side == 'Left':
@@ -182,12 +182,6 @@ class ToolFlangeMonitoring(Node):
             self.tf_left_wrench = msg
         else:
             self.tf_right_wrench = msg
-
-    def tf_status_callback(self, msg, side):
-        if side == 'Left':
-            self.tf_left_status = msg
-        else:
-            self.tf_right_status = msg
 
     def render_dashboard(self):
         # Clear screen and return cursor to top-left
@@ -211,11 +205,10 @@ class ToolFlangeMonitoring(Node):
             ("Right", self.tf_right_imu, self.tf_right_wrench, self.tf_right_status, right_conn)
         ]:
             if imu or wrench or status:
-                voltage_mv = status.output_voltage if status else 0
-                voltage_v = voltage_mv / 1000.0  # mV -> V
-                voltage_str = f"{voltage_v:.2f} V"
-                if voltage_mv > 1000:
-                    power_status = f"\033[1;32mON ({round(voltage_v)}V)\033[0m"
+                voltage_v = status.output_voltage if status else 0
+                voltage_str = f"{voltage_v} V"
+                if voltage_v > 0:
+                    power_status = f"\033[1;32mON ({voltage_v}V)\033[0m"
                 else:
                     if not conn:
                         power_status = "\033[1;33mOFF / SIMULATED\033[0m"
@@ -242,22 +235,22 @@ class ToolFlangeMonitoring(Node):
                 
                 if status:
                     print(f"  Switch A:      {status.switch_a}")
-                    print(f"  Digital Input:  A={status.digital_input_a}, B={status.digital_input_b}")
-                    print(f"  Digital Output: A={status.digital_output_a}, B={status.digital_output_b}")
                 else:
-                    print(f"  Status/IO:     \033[1;33mWaiting for status topic...\033[0m")
+                    print(f"  Status/IO:     \033[1;33mWaiting for robot_state topic...\033[0m")
             else:
                 print(f"Tool Flange [{side}]:  \033[1;33mWaiting for data/disconnected...\033[0m")
             print("-" * 65)
         print("=" * 65)
 
 def main(args=None):
-    rclpy.init(args=args)
+    # Ctrl+C is a plain KeyboardInterrupt: rclpy's own handler can shut the context down in the
+    # middle of a spin, which ends in an RCLError instead of a clean exit.
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     monitor = None
     try:
         monitor = ToolFlangeMonitoring()
         rclpy.spin(monitor)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         print("\033[H\033[J", end="", flush=True)

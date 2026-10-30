@@ -23,12 +23,13 @@
     se2_linear_acceleration_limit: 0.5
     se2_angular_acceleration_limit: 0.5
 
-
-    # additional options
-    fault_reset_trigger: false 
     
     # Collision options
     collision_threshold: 0.02 # meter
+
+    # Control manager: true enables it in unlimited mode (joint limits are not checked at
+    # enable, so a joint that stopped just outside its limit can be moved back)
+    control_manager_unlimited: false
 
 
     # Status publish triggers

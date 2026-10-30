@@ -11,6 +11,7 @@
 // A module with `follows:` (a gripper finger) is moved to where its joint of the given
 // sensor_msgs/JointState topic is, at most every `follow_period` s: when it has moved more
 // than `follow_tolerance` m, and wherever it has come to rest.
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -76,6 +77,21 @@ int main(int argc, char ** argv) {
       for (size_t i = 0; i < modules.size(); ++i) now.push_back(at_position(modules[i], applied[i]));
       return now;
     };
+    // The RB-Y1 v1.3 carries its gripper in its URDF (links gripper_right / gripper_left):
+    // the gripper modules of rby1_tools' gripper.yaml would put a second one on its hands.
+    const auto links = scene.current(PlanningSceneComponents::ALLOWED_COLLISION_MATRIX)
+                         .allowed_collision_matrix.entry_names;
+    const auto has_link = [&links](const std::string & name) {
+      return std::find(links.begin(), links.end(), name) != links.end();
+    };
+    if (has_link("gripper_right") || has_link("gripper_left")) {
+      for (const auto & m : modules) {
+        if (m.spec.name.rfind("gripper_", 0) == 0) {
+          throw std::runtime_error("the robot model already has the gripper (RB-Y1 v1.3): not loading module '" +
+                                   m.spec.name + "' -- do not use rby1_tools' gripper.yaml with it");
+        }
+      }
+    }
     scene.apply_diff(add_diff(placed()));
     std::string names;
     for (const auto & m : modules) names += (names.empty() ? "" : ", ") + m.spec.name + (m.attach ? " on " : " at ") + m.spec.frame;
@@ -126,7 +142,12 @@ int main(int argc, char ** argv) {
         RCLCPP_WARN(node->get_logger(), "planning scene check: %s", error.what());
       }
     }
-    if (remove_on_exit) {
+    // Stopped together with move_group (a launch's Ctrl+C), there is nothing to remove
+    // from and waiting for the service would only delay the shutdown.
+    if (remove_on_exit && !scene.available()) {
+      RCLCPP_INFO(node->get_logger(), "move_group is gone; nothing to remove the %zu object(s) from",
+                  modules.size());
+    } else if (remove_on_exit) {
       scene.apply_diff(remove_diff(modules));
       RCLCPP_INFO(node->get_logger(), "removed %zu object(s)", modules.size());
     }

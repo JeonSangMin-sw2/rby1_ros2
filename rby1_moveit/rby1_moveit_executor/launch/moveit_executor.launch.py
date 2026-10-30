@@ -50,6 +50,20 @@ ARGUMENTS = {
 CHECK_FRACTION = {'right_arm': 0.002, 'left_arm': 0.002, 'both_arms': 0.0014}
 
 
+def keep_controller_plugin_loaded():
+    """Environment that keeps move_group's controller plugin in memory until the process ends.
+
+    MoveIt 2.5.9 (Humble) destroys the plugin loader before the node the plugin built
+    (TrajectoryExecutionManager members), so the library is unmapped first and move_group
+    segfaults on Ctrl+C in ~CallbackGroup (5 of 5 runs; preloaded: 0 of 5, clean in 0.2 s).
+    """
+    from ament_index_python.packages import get_package_prefix
+
+    library = os.path.join(get_package_prefix('moveit_simple_controller_manager'), 'lib',
+                           'libmoveit_simple_controller_manager.so')
+    return {'LD_PRELOAD': ' '.join(filter(None, [os.environ.get('LD_PRELOAD', ''), library]))}
+
+
 def config_package(kind, version):
     """('rby1_moveit_m_1_2', 'RBY1_M_v1_2') for an RB-Y1 'm' reporting version 1.2."""
     kind = kind.strip().lower()
@@ -146,7 +160,7 @@ def setup(context):
         .planning_pipelines(pipelines=['ompl'])
         .to_moveit_configs()
     )
-    driver_states = f'/{value["driver_namespace"].strip("/")}/joint_states'
+    driver_states = f'/{value["driver_namespace"].strip("/")}/joint_overall_states'
     share = get_package_share_directory(package)
     ready_pose = value['ready_pose'] or os.path.join(
         get_package_share_directory('rby1_moveit_executor'), 'config', 'ready_pose.yaml')
@@ -160,6 +174,7 @@ def setup(context):
         Node(package='robot_state_publisher', executable='robot_state_publisher', output='log',
              parameters=[config.robot_description]),
         Node(package='moveit_ros_move_group', executable='move_group', output='screen',
+             additional_env=keep_controller_plugin_loaded(),
              parameters=[config.to_dict(), {'allow_trajectory_execution': False,
                                             'publish_robot_description_semantic': True},
                          {f'ompl.{group}.longest_valid_segment_fraction': fraction

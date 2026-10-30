@@ -18,7 +18,7 @@
 # cuMotion plans with the attach: false ones and, through its target executor, with
 # what is attached to the planning arm's tool frame (as spheres on the hand; parts
 # named in the executor's free_objects are left out). The RB-Y1 gripper as such
-# modules: config/gripper.yaml.
+# modules: rby1_tools/model/rby1_gripper/gripper.yaml (rby1_tools gripper.launch.py scene:=true).
 objects:
   - name: head_camera            # a camera-sized box on the head, from a mesh file
     frame: link_head_2

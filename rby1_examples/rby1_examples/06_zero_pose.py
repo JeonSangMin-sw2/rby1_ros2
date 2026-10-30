@@ -12,7 +12,7 @@ Sequence:
   3. Wait for the action to complete and report the result.
 
 Run:
-  ros2 run rby1_examples zero_pose
+  ros2 run rby1_examples 06_zero_pose
 
 Actions used:
   - robot_joint  (Rby1JointCommand)
@@ -22,7 +22,7 @@ Services used:
   - robot_servo  (StateOnOff)
 
 Topics subscribed:
-  - joint_states/robot_state  (RobotState)
+  - robot_state  (rby1_msgs/RobotState)
 """
 import time
 import rclpy

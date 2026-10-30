@@ -9,6 +9,7 @@
 #include <array>
 #include <exception>
 #include <functional>
+#include <map>
 #include <stdexcept>
 #include <vector>
 //ros2
@@ -17,10 +18,11 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/static_transform_broadcaster.h"
 #include "rby1_msgs/msg/brake_state.hpp"
+#include "rby1_msgs/msg/part_joint_states.hpp"
 #include "rby1_msgs/msg/robot_state.hpp"
-#include "rby1_msgs/msg/tool_flange_state.hpp"
-#include "rby1_msgs/msg/tool_flange_status.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
@@ -50,6 +52,7 @@
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 //local header file
 #include "type.hpp"
+#include "default_parameters.hpp"
 #include <Eigen/Dense>
 
 using namespace std::placeholders;
@@ -60,8 +63,7 @@ namespace rby1_ros2{
     class RBY1_ROS2_DRIVER : public rclcpp::Node {
         private:
             //robot
-            RobotParameter robot_parameter_;
-            RobotJoint robot_joint_;
+            DriverParameters params_;
             RobotState robot_state_;
             rb::RobotInfo info_;
 
@@ -76,45 +78,14 @@ namespace rby1_ros2{
             Eigen::VectorXd qddot_upper_;
             std::vector<std::string> dyn_joint_names_;
 
-            std::string address;
-            std::string model;
             std::string state_topic_name;
             std::string joint_position_topic_name;
             std::string cartesian_position_topic_name;
             std::string servo_list_str;
             std::string power_list_str;
-            bool fault_reset_trigger;
-            double collision_threshold_{0.03};
-            // Fixed since 2026-10-26 (user decision), no longer driver_parameters.yaml keys:
-            // the state loop's period -- the robot's state comes at 100 Hz -- and the
-            // values a command gets when it leaves them at zero.
-            static constexpr double kStatePeriod = 0.01;          // s
-            static constexpr double kDefaultMinimumTime = 2.0;    // s
-            static constexpr double kLinearVelocityLimit = 1.5;   // m/s, Cartesian commands
-            static constexpr double kAngularVelocityLimit = 4.712388;  // rad/s
-            static constexpr double kAccelerationLimit = 1.0;     // scaling, 0 to 1
-            // Robot parameters the driver writes to the robot when it connects (SDK
-            // SetParameter, which the robot keeps in its database): the command filters'
-            // cutoff frequencies (Hz) and the default acceleration limits. From
-            // driver_parameters.yaml since 2026-10-26, at the robot's own defaults;
-            // before, the velocity limits and the 1.0 scaling above were written into
-            // them by mistake.
-            double joint_position_command_cutoff_frequency_{15.0};
-            double cartesian_command_cutoff_frequency_{15.0};
-            double default_acceleration_limit_scaling_{1.0};
-            double default_velocity_limit_scaling_{1.0};
-            double default_linear_acceleration_limit_{20.0};   // m/s^2
-            double default_angular_acceleration_limit_{10.0};  // rad/s^2
-            // Seconds of consecutive failed state reads before the robot counts as lost. A
-            // network that drops out this long is a fault to fix, not a setting to raise.
-            static constexpr double kStateLossTimeout = 1.0;
-            // A trajectory's first waypoint may need at most this share of a joint's
-            // velocity limit to be reached from the measured posture in its time.
-            static constexpr double kFjtStartVelocityScale = 1.0;  // fixed 2026-10-26, was a yaml key
+            // Fixed values of the driver: default_parameters.hpp. Settable ones: DriverParameters (type.hpp).
             int64_t last_state_ok_ns_{0};
             int failed_state_reads_{0};
-            bool publish_battery_state_{false};
-            bool publish_tool_flange_state_{false};
             std::atomic<bool> is_control_canceled_{false};
 
             bool gravity_compensation_torso_{false};
@@ -129,11 +100,13 @@ namespace rby1_ros2{
             std::mutex stream_mutex_;
 
             //ros2
-            rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr torso_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr right_arm_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr left_arm_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr head_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+            // joint_overall_states: every joint in one sensor_msgs/JointState, the topic the
+            // rest of ROS 2 reads (TF, MoveIt, RViz, the relays). joint_states: the same split
+            // by part (rby1_msgs/PartJointStates) for monitoring and logging; the wheels are
+            // not in it (the base's motion is on odom). Named so since 2026-10-28.
+            rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_overall_state_pub_;
+            rclcpp::Publisher<rby1_msgs::msg::PartJointStates>::SharedPtr joint_state_pub_;
+            rby1_msgs::msg::PartJointStates part_states_;
             rclcpp::Publisher<rby1_msgs::msg::RobotState>::SharedPtr robot_state_pub_;
             rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state_pub_;
             // Tool flange classified publishers
@@ -141,16 +114,13 @@ namespace rby1_ros2{
             rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr tool_flange_right_imu_pub_;
             rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr tool_flange_left_wrench_pub_;
             rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr tool_flange_right_wrench_pub_;
-            rclcpp::Publisher<rby1_msgs::msg::ToolFlangeStatus>::SharedPtr tool_flange_left_status_pub_;
-            rclcpp::Publisher<rby1_msgs::msg::ToolFlangeStatus>::SharedPtr tool_flange_right_status_pub_;
             rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
             std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+            std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
             rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 
             // Some stream channel is open: single commands then go out on the channels too.
             bool stream_active_{false};
-            // stream_part bits the active FollowJointTrajectory goal commands.
-            std::atomic<int> fjt_parts_{0};
             // One stream channel -- a part's own SDK command stream -- and what it carried.
             struct BodyStream {
                 std::unique_ptr<rb::RobotCommandStreamHandler<ModelType>> handler;
@@ -186,7 +156,6 @@ namespace rby1_ros2{
             static constexpr size_t PART_HEAD      = 4;
             static constexpr size_t PART_COUNT     = 5;
             std::atomic<bool> is_controlling_[PART_COUNT]{}; // true while that part is commanded
-            bool any_part_controlling() const;
 
             std::atomic<uint64_t> command_seq_{0}; // incremented on each new stream cmd
 
@@ -237,9 +206,6 @@ namespace rby1_ros2{
             rclcpp::Service<rby1_msgs::srv::StateOnOff>::SharedPtr hardware_control_service_;
 
             std::atomic<bool> hardware_control_active_{false};
-            // A channel opened but never commanded is closed after this long. Once commanded it stays
-            // open: its last command holds its part (control hold time 1e6) until the channel is closed.
-            static constexpr double kStreamIdleTimeout = 60.0;
             rclcpp::TimerBase::SharedPtr stream_safety_timer_;
 
             // Impedance state for follow_joint_trajectory and stream_joint (set_trajectory_impedance)
@@ -249,12 +215,12 @@ namespace rby1_ros2{
             std::vector<double> trajectory_stiffness_torso_;
             std::vector<double> trajectory_stiffness_right_arm_;
             std::vector<double> trajectory_stiffness_left_arm_;
-            double trajectory_damping_ratio_{1.0};
-            double trajectory_torque_limit_{10.0};
-            static constexpr double kTrajectoryStiffness = 100.0; // N·m/rad, when the request gives none
+            double trajectory_damping_ratio_{kDefaultDampingRatio};
+            double trajectory_torque_limit_{kDefaultTorqueLimit};
             // How often cmd_vel is expected (yaml stream_command_hz): each one is carried out for 1.1 of that period.
-            double stream_command_hz_{30.0};
 
+            void cancel_control_callback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                                         std::shared_ptr<std_srvs::srv::Trigger::Response> response);
             void gravity_compensation_callback(const std::shared_ptr<rby1_msgs::srv::GravityCompensation::Request> request,
                                                std::shared_ptr<rby1_msgs::srv::GravityCompensation::Response> response);
             void control_manager_callback(const std::shared_ptr<rby1_msgs::srv::ControlManagerCommand::Request> request,
@@ -299,6 +265,10 @@ namespace rby1_ros2{
             RBY1_ROS2_DRIVER();
             ~RBY1_ROS2_DRIVER();
             bool check_controll_manager();
+            void publish_base_footprint_tf();
+            // Cancels every control of this connection, closes the stream channels, waits for the
+            // robot to be idle and disables the control manager. Returns the disable's result.
+            bool stop_control_and_disable();
             void read_joint_state();
             rb::RobotState<ModelType> get_state_with_retry(int attempts = 3);
             std::optional<std::string> start_problem(const trajectory_msgs::msg::JointTrajectory &trajectory);
@@ -309,7 +279,6 @@ namespace rby1_ros2{
 
         private:
             void init_parameter();
-            void resize_joint_states();
             void publish_joint_states();
             
             void power_control(const std::shared_ptr<rby1_msgs::srv::StateOnOff::Request> request,
@@ -365,9 +334,6 @@ namespace rby1_ros2{
             void handle_stream_cartesian_accepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<StreamCartesian>> goal_handle);
             void execute_stream_cartesian(const std::shared_ptr<rclcpp_action::ServerGoalHandle<StreamCartesian>> goal_handle);
 
-            void cancel_control_callback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-                                         std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-            
             // Five stream channels, each its own SDK command stream, so one runs while
             // another is commanded: each arm, the torso, the mobile base and the head.
             // send_body() sends the body channels' commands at the same time, so a
@@ -375,8 +341,16 @@ namespace rby1_ros2{
             BodyStream right_arm_stream_, left_arm_stream_, torso_stream_, mobility_stream_, head_stream_;
             // When a stream was last closed: one opened right after takes commands the robot ignores.
             std::chrono::steady_clock::time_point stream_closed_at_{};
-            static constexpr auto kStreamReopenGap = std::chrono::milliseconds(300);
-            std::shared_ptr<rclcpp_action::ServerGoalHandle<FollowJointTrajectory>> active_follow_joint_trajectory_goal_{nullptr};
+            // The trajectories running now, one entry per part (stream_part bit) each names:
+            // trajectories on different parts run at the same time, and one that names a part
+            // another runs on replaces that one. Guarded by mutex_; the helpers expect it held.
+            using FjtGoal = std::shared_ptr<rclcpp_action::ServerGoalHandle<FollowJointTrajectory>>;
+            std::map<int, FjtGoal> fjt_goals_;
+            int fjt_parts_running() const;             // the parts with a trajectory on them
+            int fjt_parts_of(const FjtGoal &goal) const;  // the parts `goal` still runs on
+            void fjt_release(const FjtGoal &goal);
+            // Ends the trajectories on `parts` with `why` as their result; their threads send nothing more.
+            void fjt_abort_overlapping(int parts, const std::string &why);
 
             bool process_joint_part(const rby1_msgs::msg::JointCommand& cmd,
                                     const std::string& part_name,

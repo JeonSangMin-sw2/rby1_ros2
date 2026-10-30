@@ -100,6 +100,7 @@ import time
 
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -464,7 +465,7 @@ def main(args=None):
         node = CartesianTargetMove()
         node.start()
         node.serve()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     except Exception as error:
         code = 1

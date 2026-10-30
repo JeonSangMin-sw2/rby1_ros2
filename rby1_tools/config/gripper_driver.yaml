@@ -1,0 +1,15 @@
+# gripper_driver: the RB-Y1 gripper itself, through the SDK's Dynamixel bus (gripper.launch.py
+# controller:=real). Runs on the PC the gripper's USB is plugged into (the UPC).
+gripper_driver:
+  ros__parameters:
+    device: /dev/rby1_gripper        # the SDK's gripper device (rb::upc::kGripperDeviceName)
+    hands: ["right", "left"]         # /rby1/<hand>_gripper/command, /grasp and /state for each
+    right_id: 0                      # Dynamixel id of each hand's motor
+    left_id: 1
+    topic_prefix: /rby1
+    max_opening: 0.05                # m, each finger, fully open (the travel the homing finds)
+    rate: 50.0                       # Hz, state messages
+    homing: true                     # at start, run each motor to both ends to learn its travel (the fingers move!)
+    homing_current: 0.3              # A, pushing toward an end while homing (SDK example 35: 0.3)
+    hold_current: 5.0                # the current limit of the position control (SDK example 35: 5)
+    inverted: false                  # true if a motor's encoder rises when the gripper closes (example 35: GRIPPER_DIRECTION)

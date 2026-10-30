@@ -154,7 +154,7 @@ MoveItExecutor::MoveItExecutor()
   }
 
   joints_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-    driver("joint_states"), rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::JointState & msg) {
+    driver("joint_overall_states"), rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::JointState & msg) {
       on_joints(msg);
     });
   state_sub_ = create_subscription<rby1_msgs::msg::RobotState>(
@@ -241,7 +241,7 @@ std::map<std::string, double> MoveItExecutor::fresh_positions(std::chrono::durat
   while (received_ <= since) {
     lock.unlock();
     if (std::chrono::steady_clock::now() > deadline || !rclcpp::ok()) {
-      throw std::runtime_error("no joint_states from the driver -- is the RB-Y1 driver running "
+      throw std::runtime_error("no joint_overall_states from the driver -- is the RB-Y1 driver running "
                                "(ros2 launch rby1_driver rby1_ros2_driver.launch.py)?");
     }
     std::this_thread::sleep_for(10ms);

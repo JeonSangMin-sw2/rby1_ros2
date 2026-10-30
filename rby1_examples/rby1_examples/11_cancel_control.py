@@ -17,7 +17,7 @@ Sequence:
   3. Send left-arm goal, wait 1 s, cancel via Trigger service.
 
 Run:
-  ros2 run rby1_examples cancel_control
+  ros2 run rby1_examples 11_cancel_control
 
 Actions used:
   - robot_joint        (Rby1JointCommand)
@@ -28,7 +28,7 @@ Services used:
   - cancel_control     (std_srvs/Trigger)
 
 Topics subscribed:
-  - joint_states/robot_state  (RobotState)
+  - robot_state  (rby1_msgs/RobotState)
 """
 import time
 import rclpy
