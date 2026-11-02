@@ -109,7 +109,7 @@ source /opt/ros/humble/setup.bash          # jazzy on Ubuntu 24.04
 source ~/.bashrc
 ```
 
-## ROS domain (optional)
+## ROS domain (recommended on a shared network)
 
 ROS 2 nodes see each other only when they have the same domain number (`ROS_DOMAIN_ID`, 0 when it is not set). If
 other robots or PCs on the same network run ROS 2, their topics mix with this robot's. To keep this robot apart,

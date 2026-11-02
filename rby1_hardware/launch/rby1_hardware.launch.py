@@ -55,7 +55,9 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description}],
     )
 
-    # the controller manager: loads the hardware plugin named in the URDF and runs the controllers
+    # the controller manager: loads the hardware plugin named in the URDF and runs the controllers.
+    # Humble takes the URDF from the robot_description parameter below; Jazzy takes it from the
+    # /robot_description topic of the robot_state_publisher above (the same URDF).
     controller_manager = Node(
         package='controller_manager',
         executable='ros2_control_node',

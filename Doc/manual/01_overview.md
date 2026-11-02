@@ -117,7 +117,9 @@ build): `cv_bridge.hpp` is used where it exists (`cv_bridge.h` on Humble); the M
 `joint_state_broadcaster` and `joint_trajectory_controller` and no longer `warehouse_ros_mongo` (not in apt);
 `joint_limits.yaml` writes the acceleration limit MoveIt Humble used by default (1.0 rad/s²), which MoveIt Jazzy
 refuses to plan without; the `demo.launch.py` have no `chrt` prefix (`ros2_control_node` sets its own real-time
-priority where the user may, [Hardware Interface](05_hardware_interface.md#real-time-scheduling)).
+priority where the user may, [Hardware Interface](05_hardware_interface.md#real-time-scheduling)); each MoveIt
+package's `rsp.launch.py` renders the URDF with the demo's arguments, since on Jazzy the controller manager takes
+the URDF from that node's `/robot_description` topic ([MoveIt](06_moveit.md#demolaunchpy)).
 
 ## Run
 
@@ -165,6 +167,14 @@ scene, the objects and a gripper with its scene on once `move_group` is up.
 **The build stops at `RBY1_SDK_PATH`.** It is not set, or does not point at a built SDK (`include/rby1-sdk/robot.h`
 and `build/src` must exist there). Set it in `~/.bashrc` and open a new terminal.
 
+**`sequence size exceeds remaining buffer`, services time out, controllers fail to load, the hardware plugin
+warns `No active joint state from driver`.** Another ROS 2 machine on the same network uses the same
+`ROS_DOMAIN_ID` (0 unless set) — on 2026-10-30 a Jazzy PC running the RB-Y1 MoveIt demo on the LAN: its
+`/controller_manager`, `/joint_states` and Jazzy-only message types reached the Humble nodes here. Give this PC (and
+its containers) a domain of its own, `export ROS_DOMAIN_ID=<1..101>` in `~/.bashrc`, or `ROS_LOCALHOST_ONLY=1` when
+everything runs on one PC. `ROS_LOCALHOST_ONLY=1 ros2 topic list --no-daemon` shows what is local; anything that
+appears only without it comes from the network.
+
 **`rosdep` cannot locate a definition.** A package of the workspace declares something apt does not have. As of
 2026-10-30 none does on Humble or Jazzy; `rosdep install … --skip-keys <name>` gets past one that appears.
 
@@ -202,6 +212,12 @@ before the node that plugin built; the executor's launch preloads the library so
 **MoveIt refuses every target with error 99999.** Something attached to the robot overlaps a link that is not in its
 `touch_links` — a tool through the gripper, the gripper on a v1.3 whose URDF has it already
 ([Objects](06_moveit.md#objects-rby1_moveit_objects)).
+
+**On Jazzy, `demo.launch.py` plans and "executes" but the robot does not move, and
+`ros2 control list_hardware_components -v` shows `mock_components/GenericSystem` although `use_fake_hardware` is
+false.** The controller manager took the URDF from `rsp.launch.py`'s `/robot_description`, rendered with the xacro
+defaults. Fixed 2026-11-02: `rsp.launch.py` now applies the demo's arguments. With an older checkout, edit the
+package's `launch/rsp.launch.py` the same way, or set `use_fake_hardware` to `false` in its `config/*.urdf.xacro`.
 
 **On Jazzy, `No acceleration limit was defined for joint …`.** A `joint_limits.yaml` older than 2026-10-30; the
 current ones define it.

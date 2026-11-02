@@ -43,6 +43,12 @@ ros2 launch rby1_moveit_m_1_2 demo.launch.py use_fake_hardware:=true            
 | `driver_namespace` | `rby1` | Namespace of the driver |
 
 The controllers it spawns, and how they share joints, are in [Hardware Interface](05_hardware_interface.md#how-it-is-built).
+How the URDF reaches the controller manager differs by distro: on Humble `demo.launch.py` hands it over as a
+parameter; on Jazzy the controller manager reads the `/robot_description` topic of the `robot_state_publisher` that
+the package's `launch/rsp.launch.py` starts. That launch therefore renders the xacro with the same arguments
+(`use_fake_hardware`, `robot_ip`, `model`, `driver_namespace`) as `demo.launch.py` — before 2026-11-02 it used the
+xacro defaults, and on Jazzy the demo always ran on mock hardware whatever was asked for (plan and execute
+succeeded, the robot did not move; `ros2 control list_hardware_components -v` showed `mock_components/GenericSystem`).
 In RViz: `You can start planning now` in the log, then plan and execute from the MotionPlanning panel. The launch
 ends when `ros2_control_node` or `move_group` dies. On a v1.3 the finger joints need the gripper controller's joint
 states ([Tools — Gripper](07_tools.md#gripper)). In `rby1_bringup` this is `MOVEIT_DEMO`.
