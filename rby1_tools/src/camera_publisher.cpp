@@ -1,13 +1,14 @@
 // camera_publisher: a webcam (OpenCV), or an image or video file, as ROS topics for
 // Isaac ROS AprilTag in the container -- the camera stays on the host, only images
-// cross over. Settings: config/webcam.yaml.
+// cross over. Settings: config/camera/webcam.yaml (`source` picks the device or file).
 //
-//   ros2 launch rby1_tools camera.launch.py camera:=webcam [source:=/dev/video0]
-//   ros2 launch rby1_tools camera.launch.py camera:=file source:=/path/tag.png
+//   ros2 launch rby1_tools camera.launch.py camera:=webcam [camera_name:=camera] [mount:=head_default]
 //
-// Publishes the image (bgr8) and camera_info on `image_topic` / `info_topic`. The
-// camera model comes from `intrinsics_file` when `use_custom_intrinsics` (a
-// calibration, camera_ws or ROS layout), else from `horizontal_fov` as a
+// Publishes the image (bgr8) on /<camera_name>/rgb/raw -- with `compressed`, as JPEG on
+// /<camera_name>/rgb/compressed instead -- and its CameraInfo on /<camera_name>/rgb/info,
+// in <camera_name>_optical_frame; the mount (`mount` in camera_mount.yaml) as static TF.
+// The camera model comes from `intrinsics_file` when one is named (a calibration in
+// config/camera/intrinsics/, camera_ws or ROS layout), else from `horizontal_fov` as a
 // distortion-free pinhole.
 #include <chrono>
 #include <memory>
@@ -24,8 +25,11 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <tf2_ros/static_transform_broadcaster.h>
 
 #include "rby1_tools/camera_model.hpp"
+#include "rby1_tools/camera_config.hpp"
+#include "rby1_tools/image_publisher.hpp"
 
 using namespace std::chrono_literals;
 
@@ -36,17 +40,21 @@ public:
     width_ = static_cast<int>(declare_parameter("width", 1280));
     height_ = static_cast<int>(declare_parameter("height", 720));
     const double fps = declare_parameter("fps", 30.0);
-    frame_id_ = declare_parameter("frame_id", "camera_optical_frame");
+    const auto camera_name = declare_parameter("camera_name", "camera");
+    const auto mount = declare_parameter("mount", "head_default");
+    frame_id_ = rby1_tools::frame_name(camera_name, "optical_frame");
     const double fov = declare_parameter("horizontal_fov", 69.0);
-    const bool custom = declare_parameter("use_custom_intrinsics", false);
-    const auto intrinsics_file = declare_parameter("intrinsics_file", "");
+    const auto intrinsics_file = rby1_tools::intrinsics_path(declare_parameter("intrinsics_file", ""));
     const bool auto_exposure = declare_parameter("auto_exposure", true);
     const double exposure = declare_parameter("exposure", 100.0);  // the driver's units (V4L2: 100 us)
     // Reliable: Isaac ROS subscribes reliably and would get nothing from a best-effort
     // publisher; a reliable one serves best-effort subscribers too.
-    image_pub_ = create_publisher<sensor_msgs::msg::Image>(declare_parameter("image_topic", "/camera/image_raw"), 5);
-    info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(declare_parameter("info_topic", "/camera/camera_info"),
-                                                               5);
+    const bool compressed = declare_parameter("compressed", false);
+    const auto stream = rby1_tools::stream_topic(camera_name, "rgb");
+    image_pub_ = rby1_tools::image_publisher(this, stream, compressed);
+    info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(stream + "/info", 5);
+    tf_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
+    tf_->sendTransform(rby1_tools::mount_transforms(this, camera_name, mount));
 
     source_ = rby1_tools::parse_source(source);
     if (source_.kind == rby1_tools::Source::Kind::image) {
@@ -79,23 +87,20 @@ public:
       height_ = static_cast<int>(capture_.get(cv::CAP_PROP_FRAME_HEIGHT));
     }
 
-    if (custom) {
-      if (intrinsics_file.empty()) {
-        throw std::runtime_error("use_custom_intrinsics is true but intrinsics_file is empty: give the calibration "
-                                 "YAML (camera_ws or ROS layout)");
-      }
+    if (!intrinsics_file.empty()) {
       info_ = rby1_tools::camera_info(rby1_tools::read_intrinsics(intrinsics_file), width_,
                                                  height_, frame_id_);
       RCLCPP_INFO(get_logger(), "camera model from %s (fx %.1f fy %.1f)", intrinsics_file.c_str(), info_.k[0],
                   info_.k[4]);
     } else {
       info_ = rby1_tools::approximate_camera_info(width_, height_, fov, frame_id_);
-      RCLCPP_WARN(get_logger(), "no calibration (use_custom_intrinsics false): a pinhole from horizontal_fov %.1f "
+      RCLCPP_WARN(get_logger(), "no calibration (intrinsics_file empty): a pinhole from horizontal_fov %.1f "
                                 "deg; marker distances are approximate until the camera is calibrated", fov);
     }
     timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / fps), [this] { tick(); });
-    RCLCPP_INFO(get_logger(), "publishing %s (%dx%d) at %.0f Hz as %s in %s", source_.path.c_str(), width_,
-                height_, fps, image_pub_->get_topic_name(), frame_id_.c_str());
+    RCLCPP_INFO(get_logger(), "publishing %s (%dx%d) at %.0f Hz as %s and %s/info in %s (mount: %s)",
+                source_.path.c_str(), width_, height_, fps, rby1_tools::image_topic(stream, compressed).c_str(),
+                stream.c_str(), frame_id_.c_str(), rby1_tools::mounted(mount) ? mount.c_str() : "none");
   }
 
 private:
@@ -114,7 +119,7 @@ private:
     std_msgs::msg::Header header;
     header.stamp = now();
     header.frame_id = frame_id_;
-    image_pub_->publish(*cv_bridge::CvImage(header, "bgr8", frame).toImageMsg());
+    image_pub_.publish(cv_bridge::CvImage(header, "bgr8", frame).toImageMsg());
     info_.header = header;
     info_pub_->publish(info_);
   }
@@ -125,8 +130,9 @@ private:
   int width_, height_;
   std::string frame_id_;
   sensor_msgs::msg::CameraInfo info_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
+  image_transport::Publisher image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr info_pub_;
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tf_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

@@ -20,7 +20,7 @@
 namespace rby1_moveit_objects {
 
 // A module that moves with one joint of a sensor_msgs/JointState topic -- a gripper finger
-// of rby1_tools' virtual_gripper: its xyz shifts by axis * the joint's position.
+// of rby1_tools' gripper_driver: its xyz shifts by axis * the joint's position.
 struct Follow {
   std::string topic;
   std::string joint;

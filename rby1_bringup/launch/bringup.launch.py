@@ -26,7 +26,7 @@ ROS2_CONTROL = False      # ros2_control with the hardware plugin, no MoveIt (no
 SCENE = False             # obstacles loaded into the planning scene (needs the planner or the demo)
 OBJECTS = False           # modules on the robot or fixtures in the planning scene (needs the planner or the demo)
 CAMERA = False            # the camera publisher (rby1_tools)
-GRIPPER = True            # the gripper on the hands: model on TF, parts in the scene, virtual or real controller (rby1_tools)
+GRIPPER = True            # the gripper on the hands: model on TF, parts in the scene, its driver, virtual or real (rby1_tools)
 
 # A launch evaluates every included launch file before it starts any process. The planner's
 # launch looks the driver up while it is evaluated, so it is evaluated only after the driver has
@@ -84,8 +84,8 @@ def check(config):
     if has_gripper_in_model and not GRIPPER:
         warnings.append("RB-Y1 v1.3's finger joints get their joint states from the gripper controller: "
                         'switch GRIPPER on, or TF and MoveIt miss gripper_finger_*_joint')
-    if gripper['controller'] not in ('virtual', 'real', 'none'):
-        raise RuntimeError(f"gripper.controller is virtual, real or none, not '{gripper['controller']}'")
+    if str(gripper['virtual']).lower() not in ('', 'true', 'false'):
+        raise RuntimeError(f"gripper.virtual is true or false (or \"\": its settings'), not '{gripper['virtual']}'")
     if (SCENE or OBJECTS or (GRIPPER and gripper['scene'])) and not (MOVEIT_EXECUTOR or MOVEIT_DEMO):
         warnings.append('SCENE/OBJECTS/gripper.scene need a move_group; none starts here, so one must '
                         'already be running on this ROS domain (they wait for it)')
@@ -198,11 +198,11 @@ def generate_launch_description():
         parts.append(IncludeLaunchDescription(
             launch_file('rby1_tools', 'camera.launch.py'),
             launch_arguments={
-                'camera': camera['camera'],             # webcam, realsense or file
-                'config': camera['config'],             # '': its config/<camera>.yaml
-                'source': camera['source'],             # '': the config's
-                'intrinsics': camera['intrinsics'],     # '': the config's
-                'mount': camera['mount'],               # '': its config/camera_mount.yaml
+                'camera': camera['camera'],             # realsense or webcam
+                'camera_name': camera['camera_name'],
+                'config': camera['config'] or os.path.join(
+                    config_dir('rby1_tools'), 'camera', f"{camera['camera']}.yaml"),
+                'mount': camera['mount'],               # a name in its config/camera/camera_mount.yaml; none: no link
             }.items()))
     if GRIPPER:
         gripper = config['gripper']
@@ -212,11 +212,11 @@ def generate_launch_description():
             launch_arguments={
                 'model': str(gripper['model']),
                 'scene': str(gripper['scene']),
-                'controller': gripper['controller'],            # virtual, real or none
+                'virtual': str(gripper['virtual']).lower(),     # true, false; '': its settings'
                 'hands': gripper['hands'],
-                'mount': gripper['mount'],                      # '': its config/gripper_mount.yaml
-                'config': gripper['config'],                    # '': the controller's default settings
-                # v1.3: the robot URDF's finger joints take their state from the controller
+                'mount': gripper['mount'],                      # '': its config/gripper/gripper_mount.yaml
+                'config': gripper['config'],                    # '': the driver's default settings
+                # v1.3: the robot URDF's finger joints take their state from the driver
                 'joint_states_topic': '/joint_states' if version.startswith('1.3') else '',
             }.items())
         if gripper['scene'] and moveit is not None:

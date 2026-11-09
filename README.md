@@ -21,7 +21,7 @@ It wraps the RBY1 C++ SDK into a ROS 2 node, providing state monitoring and mult
 
 ### System Architecture Overview
 
-![System Architecture](Doc/img/system_architecture.png)
+[![System Architecture](Doc/img/architecture.svg)](Doc/img/architecture.svg)
 
 The system operates using two primary pipelines to interface with the robot:
 1. **Direct Control Mode (`rby1_ros2_driver`)**: A standalone C++ ROS 2 node that communicates directly with the RBY1 robot or simulator via gRPC. User applications/scripts send standard ROS 2 topics, services, and actions (e.g. `robot_joint`, `robot_cartesian`) to command movements and monitor status.
@@ -239,8 +239,8 @@ ros2 launch rby1_bringup bringup.launch.py
 | `ROS2_CONTROL` | `ros2_control` with the hardware plugin, without MoveIt (not together with `MOVEIT_DEMO`) | `ros2_control`: `use_fake_hardware` (which robot: the top of `rby1_hardware`'s launch file) |
 | `SCENE` | obstacles loaded into the planning scene | `scene`: `config` |
 | `OBJECTS` | modules on the robot or fixtures in the planning scene (the gripper is `GRIPPER`'s `scene`) | `objects`: `config` |
-| `CAMERA` | the camera publisher | `camera`: `camera`, `config`, `source`, `intrinsics`, `mount` |
-| `GRIPPER` | the gripper on the hands: its model on TF, its parts in the planning scene, a virtual or the real controller (v1.3: `model`/`scene` off, the controller feeds the robot model's finger joints; set `moveit_executor.version: 1.3`) | `gripper`: `model`, `scene`, `controller`, `hands`, `mount`, `config` |
+| `CAMERA` | the camera publisher | `camera`: `camera`, `camera_name`, `config`, `mount` |
+| `GRIPPER` | the gripper on the hands: its model on TF, its parts in the planning scene, its driver, virtual or real (v1.3: `model`/`scene` off, the driver feeds the robot model's finger joints; set `moveit_executor.version: 1.3`) | `gripper`: `model`, `scene`, `virtual`, `hands`, `mount`, `config` |
 
 Each part in the launch file is its own launch file included with its arguments written out, so a block can be copied or changed as it is. Details: [Manual — Bringup](Doc/manual/01_overview.md#bringup-rby1_bringup).
 
@@ -376,24 +376,25 @@ In `rby1_bringup` this is the `ROS2_CONTROL` flag. Details: [Manual — Hardware
 
 | Tool | Launch | What it does |
 |---|---|---|
-| `camera_publisher` | `camera.launch.py` | A webcam through OpenCV: the images, the camera model, and the camera's place on the robot on TF (`config/webcam.yaml`) |
-| `realsense_publisher` | `camera.launch.py camera:=realsense` | An Intel RealSense through librealsense directly: the same, with depth and infrared when they are switched on (`config/realsense.yaml`) |
-| gripper | `gripper.launch.py` | The RB-Y1 gripper on the hands, by flag: `model` (its URDF and meshes, `model/rby1_gripper/`, on TF under `ee_right`/`ee_left` for RViz), `scene` (its body and fingers as parts in the MoveIt planning scene, `model/rby1_gripper/gripper.yaml`), `controller` (`virtual`, `real` or `none`). Where it sits on each hand: `config/gripper_mount.yaml` |
-| `virtual_gripper` | `gripper.launch.py controller:=virtual` | Stands in for a gripper driver: `/rby1/<hand>_gripper/command` (each finger's opening, m) and `/grasp` (true closes) in, the fingers' state out; nothing on the robot moves (`config/virtual_gripper.yaml`). On an RB-Y1 v1.3, whose robot model carries the gripper, `model:=false joint_states_topic:=/joint_states` feeds the model's finger joints |
-| `gripper_driver` | `gripper.launch.py controller:=real` | The gripper itself through the SDK's Dynamixel bus (`/dev/rby1_gripper`, on the UPC), the same topics (`config/gripper_driver.yaml`). Built where `RBY1_SDK_PATH` is set. At start it homes each motor to both ends of its travel: the fingers move |
+| `camera_publisher` | `camera.launch.py` | A webcam (or an image or video file) through OpenCV: the image on `/<camera_name>/rgb/raw`, the camera model, and the camera's place on the robot on TF (`config/camera/webcam.yaml`, mounts in `config/camera/camera_mount.yaml`) |
+| `realsense_publisher` | `camera.launch.py camera:=realsense` | An Intel RealSense through librealsense directly: the same, with depth, both infrared cameras and a point cloud when they are switched on (`config/camera/realsense.yaml`) |
+| gripper | `gripper.launch.py` | The RB-Y1 gripper on the hands, by flag: `model` (its URDF and meshes, `model/rby1_gripper/`, on TF under `ee_right`/`ee_left` for RViz), `scene` (its body and fingers as parts in the MoveIt planning scene, `model/rby1_gripper/gripper.yaml`), and always its driver. Where it sits on each hand: `config/gripper/gripper_mount.yaml` |
+| `gripper_driver` | `gripper.launch.py [virtual:=false]` | `/rby1/<hand>_gripper/grasp` (true closes) and `/command` (each finger's opening, m) in, the fingers' state out (`config/gripper/gripper_driver.yaml`, positions 0 closed .. 1000 open). `virtual: true`: nothing moves. `virtual: false`: the gripper itself through the SDK's Dynamixel bus (`/dev/rby1_gripper`, on the UPC; built where `RBY1_SDK_PATH` is set); at start it homes each motor to both ends of its travel: the fingers move. On an RB-Y1 v1.3, whose robot model carries the gripper, `model:=false joint_states_topic:=/joint_states` feeds the model's finger joints |
+| `lidar_publisher` | `lidar.launch.py` | The LakiBeam1 2D LiDARs on the mobile base (two, up to four): `/lidar_front_left/scan`, `/lidar_front_right/scan` (`LaserScan`) and each sensor's place on TF (`config/lidar/lidar.yaml`). Run it on the PC the sensors send to (the UPC, 192.168.30.2) |
 
 A marker detector is not part of this repository: any node works that publishes each marker as
 `/rby1/marker_<id>/pose` (`geometry_msgs/PoseStamped` in the camera's optical frame) and as TF `target_marker_<id>`;
 the RB-Y1 Isaac ROS repository has one (`rby1_apriltag`). Details in [Manual — Tools](Doc/manual/07_tools.md).
 
 ```bash
-ros2 launch rby1_tools camera.launch.py                      # webcam, config/webcam.yaml
-ros2 launch rby1_tools camera.launch.py camera:=realsense    # needs: sudo apt install ros-$ROS_DISTRO-librealsense2
+ros2 launch rby1_tools camera.launch.py                      # RealSense (needs: sudo apt install ros-$ROS_DISTRO-librealsense2)
+ros2 launch rby1_tools camera.launch.py camera:=webcam       # webcam, config/camera/webcam.yaml
 ros2 launch rby1_tools camera.launch.py rviz:=true           # with RViz showing the image
 
-ros2 launch rby1_tools gripper.launch.py                       # model on TF + virtual controller
+ros2 launch rby1_tools gripper.launch.py                       # model on TF + virtual driver
 ros2 launch rby1_tools gripper.launch.py scene:=true           # and its parts in the planning scene (needs a move_group)
-ros2 launch rby1_tools gripper.launch.py controller:=real      # the gripper itself (on the UPC)
+ros2 launch rby1_tools gripper.launch.py virtual:=false        # the gripper itself (on the UPC)
+ros2 launch rby1_tools lidar.launch.py                         # the two LiDARs (on the PC they send to)
 ros2 topic pub --once /rby1/right_gripper/grasp std_msgs/msg/Bool "{data: true}"         # close
 ros2 topic pub --once /rby1/right_gripper/command std_msgs/msg/Float64 "{data: 0.05}"   # fully open: each finger's opening, m
 ```

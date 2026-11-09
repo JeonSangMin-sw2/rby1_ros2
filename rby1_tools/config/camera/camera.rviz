@@ -41,7 +41,7 @@ Visualization Manager:
       Enabled: true
       Normalize Range: true
       Topic:
-        Value: /camera/image_raw
+        Value: /camera/rgb/raw
         Depth: 5
         History Policy: Keep Last
         Reliability Policy: Reliable
@@ -53,7 +53,7 @@ Visualization Manager:
       Overlay Alpha: 0.5
       Zoom Factor: 1
       Topic:
-        Value: /camera/image_raw
+        Value: /camera/rgb/raw
         Depth: 5
         History Policy: Keep Last
         Reliability Policy: Reliable

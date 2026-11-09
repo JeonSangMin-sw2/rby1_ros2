@@ -126,4 +126,65 @@ sensor_msgs::msg::CameraInfo camera_info(const Intrinsics & intrinsics, int widt
   return info;
 }
 
+namespace {
+
+const std::string & checked_name(const std::string & camera_name) {
+  const bool valid = !camera_name.empty() && std::isalpha(static_cast<unsigned char>(camera_name[0])) &&
+                     std::all_of(camera_name.begin(), camera_name.end(),
+                                 [](unsigned char c) { return std::isalnum(c) || c == '_'; });
+  if (!valid) {
+    throw std::invalid_argument("camera_name '" + camera_name + "' must start with a letter and hold only letters, "
+                                "digits and _ (it names topics and frames)");
+  }
+  return camera_name;
+}
+
+}  // namespace
+
+std::string stream_topic(const std::string & camera_name, const std::string & stream) {
+  return "/" + checked_name(camera_name) + "/" + stream;
+}
+
+std::string point_cloud_topic(const std::string & camera_name) {
+  return "/" + checked_name(camera_name) + "/point_cloud";
+}
+
+std::string frame_name(const std::string & camera_name, const std::string & frame) {
+  return checked_name(camera_name) + "_" + frame;
+}
+
+Mount read_mount(const std::string & path, const std::string & name) {
+  YAML::Node file;
+  try {
+    file = YAML::LoadFile(path);
+  } catch (const std::exception & error) {
+    throw std::runtime_error("cannot read mount file " + path + ": " + error.what());
+  }
+  if (!file.IsMap() || !file[name]) {
+    std::string names;
+    if (file.IsMap()) {
+      for (const auto & entry : file) names += (names.empty() ? "" : ", ") + entry.first.as<std::string>();
+    }
+    throw std::runtime_error("no mount '" + name + "' in " + path + " (it has: " + (names.empty() ? "none" : names) +
+                             ")");
+  }
+  Mount mount;
+  try {
+    const auto entry = file[name];
+    mount.parent = entry["parent"].as<std::string>();
+    const auto xyz = entry["xyz"].as<std::vector<double>>();
+    const auto rpy = entry["rpy"].as<std::vector<double>>();
+    if (mount.parent.empty() || xyz.size() != 3 || rpy.size() != 3) {
+      throw std::runtime_error("needs a parent link, xyz: [x, y, z] and rpy: [roll, pitch, yaw]");
+    }
+    std::copy(xyz.begin(), xyz.end(), mount.xyz.begin());
+    std::copy(rpy.begin(), rpy.end(), mount.rpy.begin());
+  } catch (const YAML::Exception & error) {
+    throw std::runtime_error("mount '" + name + "' in " + path + ": " + error.what());
+  } catch (const std::runtime_error & error) {
+    throw std::runtime_error("mount '" + name + "' in " + path + ": " + error.what());
+  }
+  return mount;
+}
+
 }  // namespace rby1_tools

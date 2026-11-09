@@ -1,6 +1,6 @@
 # The RB-Y1 gripper as modules in the MoveIt planning scene, one body and two fingers per
 # hand on the tool frames (ee_right / ee_left). rby1_tools' gripper.launch.py scene:=true
-# loads it (with the mount of config/gripper_mount.yaml applied); by hand:
+# loads it (with the mount of config/gripper/gripper_mount.yaml applied); by hand:
 #   ros2 launch rby1_moveit_objects objects.launch.py config:=rby1_tools/model/rby1_gripper/gripper.yaml
 #
 # The robot model of an RB-Y1 up to v1.2 ends at the tool frames: MoveIt and cuMotion know

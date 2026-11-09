@@ -1,17 +1,24 @@
-// gripper_driver: the RB-Y1 gripper itself, through the SDK's Dynamixel bus -- one motor per
-// hand on /dev/rby1_gripper, as SDK example 35 drives it. The same topics as virtual_gripper,
-// so what listens to a gripper's state (gripper.launch.py's model and scene) does not care
-// which runs. Settings: config/gripper_driver.yaml. Built only where the SDK is (RBY1_SDK_PATH).
+// gripper_driver: the RB-Y1 gripper on the hands, virtual or real (`virtual`). The RB-Y1 driver
+// does not drive the grippers; this node takes their commands and reports their fingers, so
+// what follows a gripper's state -- the gripper's model on TF and its parts in the planning
+// scene (gripper.launch.py) -- does not care which runs. Settings: config/gripper/gripper_driver.yaml.
 //
-//   ros2 launch rby1_tools gripper.launch.py controller:=real
+//   ros2 launch rby1_tools gripper.launch.py                   # virtual: nothing moves
+//   ros2 launch rby1_tools gripper.launch.py virtual:=false    # the gripper itself (on the UPC)
 //
-// At start each motor is homed as the SDK example does: pushed with `homing_current` to one
-// end and the other until the encoder stops, which gives its travel; THE FINGERS MOVE. Then
-// current-based position control with `hold_current` as the current limit: a command sets
-// the goal, the state is read back from the encoder at `rate` Hz. Per hand in `hands`:
-// <topic_prefix>/<hand>_gripper/command (std_msgs/Float64, each finger's opening in m:
-// 0 closed .. max_opening open), /grasp (std_msgs/Bool: true closes, false opens) and
-// /state (sensor_msgs/JointState: gripper_finger_<r|l>1 and _2, both at the opening read).
+// virtual: true -- nothing moves; the reported fingers move toward each command at `speed`.
+// virtual: false -- the gripper itself, through the SDK's Dynamixel bus, one motor per hand on
+// `device`, as SDK example 35 drives it: at start each motor is homed, pushed with
+// `homing_current` to one end and the other, 3 s each, until its travel spans 207°;
+// THE FINGERS MOVE, then go to `initial_position`. Then current-based position control with
+// `hold_current` as the current limit; the state is read back from the encoders. Built with
+// the real gripper only where the SDK is (RBY1_SDK_PATH); elsewhere only virtual: true runs.
+//
+// Per hand in `hands`: <topic_prefix>/<hand>_gripper/grasp (std_msgs/Bool: true closes, false
+// opens to `open_position`), /command (std_msgs/Float64, each finger's opening in m: 0 closed ..
+// max_opening open; outside that it is refused with a warning) and /state (sensor_msgs/JointState
+// at `rate` Hz: gripper_finger_<r|l>1 and _2, both at the opening). Positions in the settings
+// are 0 (closed) .. 1000 (max_opening).
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -26,55 +33,62 @@
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64.hpp>
 
+#ifdef RBY1_TOOLS_WITH_SDK
 #include "rby1-sdk/base/dynamixel_bus.h"
-#include "rby1-sdk/upc/device.h"
-#include "rby1_tools/virtual_gripper.hpp"
+#endif
+#include "rby1_tools/gripper.hpp"
 
 class GripperDriver : public rclcpp::Node {
 public:
   GripperDriver() : rclcpp::Node("gripper_driver") {
-    const auto device = declare_parameter("device", std::string(rb::upc::kGripperDeviceName));
+    virtual_ = declare_parameter("virtual", true);
     const auto hands = declare_parameter("hands", std::vector<std::string>{"right", "left"});
-    const int64_t right_id = declare_parameter("right_id", 0);
-    const int64_t left_id = declare_parameter("left_id", 1);
     const auto prefix = declare_parameter("topic_prefix", "/rby1");
     max_opening_ = declare_parameter("max_opening", 0.05);
+    const auto open_position = declare_parameter("open_position", 1000);
+    const auto initial_position = declare_parameter("initial_position", 1000);
     const double rate = declare_parameter("rate", 50.0);
+    speed_ = declare_parameter("speed", 0.05);
+    const auto device = declare_parameter("device", "/dev/rby1_gripper");
+    const int64_t right_id = declare_parameter("right_id", 0);
+    const int64_t left_id = declare_parameter("left_id", 1);
     const bool homing = declare_parameter("homing", true);
-    homing_current_ = declare_parameter("homing_current", 0.3);
+    homing_current_ = declare_parameter("homing_current", 0.5);
     hold_current_ = declare_parameter("hold_current", 5.0);
     inverted_ = declare_parameter("inverted", false);
+    // The finger joints of the gripper's URDF -- gripper_finger_<r|l>1_joint (0..max_opening)
+    // and _2_joint (-max_opening..0) -- for robot_state_publisher: gripper.launch.py's own
+    // (/gripper/joint_states), or the robot's /joint_states on an RB-Y1 v1.3, whose URDF
+    // carries the gripper. Empty: not published.
     const auto joint_states_topic = declare_parameter("joint_states_topic", "");
     if (hands.empty()) throw std::invalid_argument("hands is empty");
-    if (!(max_opening_ > 0.0) || !(rate > 0.0)) {
-      throw std::invalid_argument("max_opening and rate must be positive");
+    if (!(max_opening_ > 0.0) || !(speed_ > 0.0) || !(rate > 0.0)) {
+      throw std::invalid_argument("max_opening, speed and rate must be positive");
     }
+    open_opening_ = rby1_tools::opening_at(open_position, max_opening_, "open_position");
+    const double initial = rby1_tools::opening_at(initial_position, max_opening_, "initial_position");
+    dt_ = 1.0 / rate;
     if (!joint_states_topic.empty()) {
       joint_states_ = create_publisher<sensor_msgs::msg::JointState>(joint_states_topic, 10);
     }
 
-    bus_ = std::make_unique<rb::DynamixelBus>(device);
-    if (!bus_->OpenPort()) throw std::runtime_error("could not open " + device);
-    if (!bus_->SetBaudRate(rb::DynamixelBus::kDefaultBaudrate)) throw std::runtime_error("could not set the baud rate of " + device);
-    std::vector<int> all_ids;
-    for (size_t i = 0; i < hands.size(); ++i) {
-      if (hands[i] != "right" && hands[i] != "left") {
-        throw std::invalid_argument("hands are right and/or left, got '" + hands[i] + "'");
+    for (const auto & name : hands) {
+      if (name != "right" && name != "left") {
+        throw std::invalid_argument("hands are right and/or left, got '" + name + "'");
       }
       auto hand = std::make_shared<Hand>();
-      hand->name = hands[i];
-      hand->id = static_cast<int>(hands[i] == "right" ? right_id : left_id);
-      if (!bus_->Ping(hand->id)) {
-        throw std::runtime_error(hand->name + " gripper: Dynamixel id " + std::to_string(hand->id) + " does not answer on " + device);
-      }
-      const std::string letter = hand->name == "right" ? "r" : "l";
+      hand->name = name;
+      hand->id = static_cast<int>(name == "right" ? right_id : left_id);
+      hand->opening = hand->goal = initial;
+      const std::string letter = name == "right" ? "r" : "l";
       hand->joints = {"gripper_finger_" + letter + "1", "gripper_finger_" + letter + "2"};
-      const auto base = prefix + "/" + hand->name + "_gripper/";
+      const auto base = prefix + "/" + name + "_gripper/";
       hand->state = create_publisher<sensor_msgs::msg::JointState>(base + "state", 10);
       hand->command = create_subscription<std_msgs::msg::Float64>(
         base + "command", 10, [this, hand](const std_msgs::msg::Float64 & message) {
           if (const auto why = rby1_tools::refused(message.data, max_opening_)) {
-            RCLCPP_WARN(get_logger(), "%s gripper: refused command %g: %s", hand->name.c_str(), message.data, why->c_str());
+            RCLCPP_WARN(get_logger(), "%s gripper: refused command %g: %s", hand->name.c_str(), message.data,
+                        why->c_str());
             return;
           }
           hand->goal = message.data;
@@ -82,38 +96,26 @@ public:
         });
       hand->grasp = create_subscription<std_msgs::msg::Bool>(
         base + "grasp", 10, [this, hand](const std_msgs::msg::Bool & message) {
-          hand->goal = message.data ? 0.0 : max_opening_;
+          hand->goal = message.data ? 0.0 : open_opening_;
           RCLCPP_INFO(get_logger(), "%s gripper: %s", hand->name.c_str(), message.data ? "closing" : "opening");
         });
       hands_.push_back(hand);
-      all_ids.push_back(hand->id);
-      RCLCPP_INFO(get_logger(), "%s gripper: Dynamixel id %d on %s; %scommand, %sgrasp -> %sstate",
-                  hand->name.c_str(), hand->id, device.c_str(), base.c_str(), base.c_str(), base.c_str());
+      RCLCPP_INFO(get_logger(), "%s gripper: %sgrasp, %scommand -> %sstate; starts at %ld (%.4f m)%s",
+                  name.c_str(), base.c_str(), base.c_str(), base.c_str(), initial_position, initial,
+                  virtual_ ? " (virtual, nothing moves)" : "");
     }
-    bus_->SetTorqueConstant(std::vector<double>(*std::max_element(all_ids.begin(), all_ids.end()) + 1, 1.0));
-    bus_->GroupSyncWriteTorqueEnable(all_ids, rb::DynamixelBus::kTorqueEnable);
-    if (homing) home(all_ids);
-    for (const auto & hand : hands_) {
-      if (!std::isfinite(hand->min) || !std::isfinite(hand->max) || !(hand->max > hand->min)) {
-        throw std::runtime_error(hand->name + " gripper: its travel is not known (homing: true learns it)");
-      }
-    }
-    set_mode(all_ids, rb::DynamixelBus::kCurrentBasedPositionControlMode);
-    std::vector<std::pair<int, double>> limits;
-    for (const auto & hand : hands_) limits.emplace_back(hand->id, hold_current_);
-    bus_->GroupSyncWriteSendTorque(limits);
-    for (const auto & hand : hands_) hand->goal = hand->opening;   // stay where the homing left it
-    timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / rate), [this] { cycle(); });
+    if (!virtual_) start_real(device, homing);
+    timer_ = create_wall_timer(std::chrono::duration<double>(dt_), [this] { cycle(); });
   }
 
   ~GripperDriver() override {
+#ifdef RBY1_TOOLS_WITH_SDK
     if (!bus_) return;
-    std::vector<int> ids;
-    for (const auto & hand : hands_) ids.push_back(hand->id);
     try {
-      bus_->GroupSyncWriteTorqueEnable(ids, rb::DynamixelBus::kTorqueDisable);
+      bus_->GroupSyncWriteTorqueEnable(ids(), rb::DynamixelBus::kTorqueDisable);
     } catch (...) {
     }
+#endif
   }
 
 private:
@@ -121,14 +123,81 @@ private:
     std::string name;
     int id = 0;
     std::vector<std::string> joints;
-    double min = std::numeric_limits<double>::infinity();    // encoder at one end, rad
+    double min = std::numeric_limits<double>::infinity();    // real: encoder at one end, rad
     double max = -std::numeric_limits<double>::infinity();   // and the other
-    double opening = 0.0;   // m, read back
+    double opening = 0.0;   // m, stepped (virtual) or read back (real)
     double goal = 0.0;      // m
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr state;
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr command;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr grasp;
   };
+
+  std::vector<int> ids() const {
+    std::vector<int> result;
+    for (const auto & hand : hands_) result.push_back(hand->id);
+    return result;
+  }
+
+  void cycle() {
+    std::vector<double> velocity(hands_.size(), 0.0);
+    if (virtual_) {
+      for (size_t i = 0; i < hands_.size(); ++i) {
+        auto & hand = *hands_[i];
+        const double before = hand.opening;
+        hand.opening = rby1_tools::step_toward(hand.opening, hand.goal, speed_, dt_);
+        velocity[i] = (hand.opening - before) / dt_;
+      }
+    } else if (!read_real()) {
+      return;
+    }
+    const auto stamp = now();
+    sensor_msgs::msg::JointState joints;
+    joints.header.stamp = stamp;
+    for (size_t h = 0; h < hands_.size(); ++h) {
+      const auto & hand = *hands_[h];
+      sensor_msgs::msg::JointState state;
+      state.header.stamp = stamp;
+      state.name = hand.joints;
+      state.position = {hand.opening, hand.opening};
+      if (virtual_) state.velocity = {velocity[h], velocity[h]};
+      hand.state->publish(state);
+      for (size_t i = 0; i < hand.joints.size(); ++i) {
+        joints.name.push_back(hand.joints[i] + "_joint");
+        joints.position.push_back((i == 0 ? 1.0 : -1.0) * hand.opening);   // finger 2 moves along -x in the URDF
+      }
+    }
+    if (joint_states_) joint_states_->publish(joints);
+  }
+
+#ifdef RBY1_TOOLS_WITH_SDK
+  void start_real(const std::string & device, bool homing) {
+    bus_ = std::make_unique<rb::DynamixelBus>(device);
+    if (!bus_->OpenPort()) throw std::runtime_error("could not open " + device);
+    if (!bus_->SetBaudRate(rb::DynamixelBus::kDefaultBaudrate)) {
+      throw std::runtime_error("could not set the baud rate of " + device);
+    }
+    for (const auto & hand : hands_) {
+      if (!bus_->Ping(hand->id)) {
+        throw std::runtime_error(hand->name + " gripper: Dynamixel id " + std::to_string(hand->id) +
+                                 " does not answer on " + device);
+      }
+      RCLCPP_INFO(get_logger(), "%s gripper: Dynamixel id %d on %s", hand->name.c_str(), hand->id, device.c_str());
+    }
+    const auto all = ids();
+    bus_->SetTorqueConstant(std::vector<double>(*std::max_element(all.begin(), all.end()) + 1, 1.0));
+    bus_->GroupSyncWriteTorqueEnable(all, rb::DynamixelBus::kTorqueEnable);
+    if (homing) home(all);
+    for (const auto & hand : hands_) {
+      if (!std::isfinite(hand->min) || !std::isfinite(hand->max) || !(hand->max > hand->min)) {
+        throw std::runtime_error(hand->name + " gripper: its travel is not known (homing: true learns it)");
+      }
+    }
+    set_mode(all, rb::DynamixelBus::kCurrentBasedPositionControlMode);
+    std::vector<std::pair<int, double>> limits;
+    for (const auto & hand : hands_) limits.emplace_back(hand->id, hold_current_);
+    bus_->GroupSyncWriteSendTorque(limits);
+    // The goals stay at initial_position: the first cycle moves the fingers there.
+  }
 
   void set_mode(const std::vector<int> & ids, int mode) {
     bus_->GroupSyncWriteTorqueEnable(ids, rb::DynamixelBus::kTorqueDisable);
@@ -138,48 +207,54 @@ private:
     bus_->GroupSyncWriteTorqueEnable(ids, rb::DynamixelBus::kTorqueEnable);
   }
 
-  // SDK example 35's homing: push every motor one way, then the other, until the encoders
-  // have not moved for 30 reads 0.1 s apart; the extremes read are the travel.
+  // SDK example 35's homing (v0.10.1): push every motor one way, then the other, with
+  // `homing_current` for 3 s each, until each motor's travel spans kMinTravel; the extremes read
+  // on the way are the travel. Short of it after 3 rounds: refused, not run on part of the travel.
+  // (The homing before stopped a direction once the encoder stood still, one round, at 0.3 A: on
+  // the robot the fingers closed and never opened; this one worked there, 2026-11-09, in the
+  // rby1-gripper Muscat plugin's copy.)
   void home(const std::vector<int> & ids) {
-    RCLCPP_WARN(get_logger(), "homing: the fingers move to both ends of their travel");
+    RCLCPP_WARN(get_logger(), "homing: the fingers move to both ends of their travel (%.2f A)", homing_current_);
     set_mode(ids, rb::DynamixelBus::kCurrentControlMode);
-    for (int direction = 0; direction < 2; ++direction) {
+    constexpr int kPhases = 6;
+    for (int phase = 0; phase < kPhases && rclcpp::ok(); ++phase) {
       std::vector<std::pair<int, double>> push;
-      for (int id : ids) push.emplace_back(id, homing_current_ * (direction == 0 ? 1.0 : -1.0));
-      std::vector<double> previous(hands_.size(), std::numeric_limits<double>::quiet_NaN());
-      int still = 0;
-      while (still < 30 && rclcpp::ok()) {
+      for (int id : ids) push.emplace_back(id, homing_current_ * (phase % 2 == 0 ? 1.0 : -1.0));
+      const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+      while (std::chrono::steady_clock::now() < end && rclcpp::ok()) {
         bus_->GroupSyncWriteSendTorque(push);
         if (const auto read = bus_->GroupFastSyncReadEncoder(ids)) {
-          bool moved = false;
-          for (size_t i = 0; i < hands_.size(); ++i) {
+          for (const auto & hand : hands_) {
             for (const auto & [id, encoder] : *read) {
-              if (id != hands_[i]->id) continue;
-              hands_[i]->min = std::min(hands_[i]->min, encoder);
-              hands_[i]->max = std::max(hands_[i]->max, encoder);
-              if (encoder != previous[i]) moved = true;
-              previous[i] = encoder;
+              if (id != hand->id) continue;
+              hand->min = std::min(hand->min, encoder);
+              hand->max = std::max(hand->max, encoder);
             }
           }
-          still = moved ? 0 : still + 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
+      if (phase % 2 == 0) continue;  // both ways pushed: a round
+      bool done = true;
+      for (const auto & hand : hands_) done = done && rby1_tools::spans_travel(hand->min, hand->max);
+      if (done) break;
+      RCLCPP_WARN(get_logger(), "homing: not both ends yet, round %d of %d", phase / 2 + 1, kPhases / 2);
     }
     std::vector<std::pair<int, double>> rest;
     for (int id : ids) rest.emplace_back(id, 0.0);
     bus_->GroupSyncWriteSendTorque(rest);
     for (const auto & hand : hands_) {
-      hand->opening = opening_of(*hand, previous_encoder(*hand));
-      RCLCPP_INFO(get_logger(), "%s gripper: travel %.3f .. %.3f rad, now %.4f m open", hand->name.c_str(), hand->min, hand->max, hand->opening);
+      const double span = (hand->max - hand->min) * 180.0 / M_PI;
+      RCLCPP_INFO(get_logger(), "%s gripper: travel %.3f .. %.3f rad (%.0f°); to %.4f m", hand->name.c_str(),
+                  hand->min, hand->max, span, hand->goal);
+      if (!rby1_tools::spans_travel(hand->min, hand->max)) {
+        throw std::runtime_error(hand->name + " gripper: homing found " + std::to_string(static_cast<int>(span)) +
+                                 "° of travel, under " +
+                                 std::to_string(static_cast<int>(rby1_tools::kMinTravel * 180.0 / M_PI)) +
+                                 "°: the fingers did not reach both ends (homing_current " +
+                                 std::to_string(homing_current_) + " A)");
+      }
     }
-  }
-
-  double previous_encoder(const Hand & hand) {
-    if (const auto read = bus_->GroupFastSyncReadEncoder({hand.id})) {
-      for (const auto & [id, encoder] : *read) if (id == hand.id) return encoder;
-    }
-    return hand.min;
   }
 
   // Each finger's opening (m) from a motor's encoder, and back. Open is `max` unless
@@ -189,48 +264,49 @@ private:
     if (inverted_) fraction = 1.0 - fraction;
     return std::clamp(fraction, 0.0, 1.0) * max_opening_;
   }
+
   double encoder_of(const Hand & hand, double opening) const {
     double fraction = std::clamp(opening / max_opening_, 0.0, 1.0);
     if (inverted_) fraction = 1.0 - fraction;
     return hand.min + fraction * (hand.max - hand.min);
   }
 
-  void cycle() {
-    std::vector<int> ids;
+  // Sends the goals and reads the openings back; false when the encoders did not answer.
+  bool read_real() {
     std::vector<std::pair<int, double>> goals;
-    for (const auto & hand : hands_) {
-      ids.push_back(hand->id);
-      goals.emplace_back(hand->id, encoder_of(*hand, hand->goal));
-    }
+    for (const auto & hand : hands_) goals.emplace_back(hand->id, encoder_of(*hand, hand->goal));
     bus_->GroupSyncWriteSendPosition(goals);
-    const auto read = bus_->GroupFastSyncReadEncoder(ids);
+    const auto read = bus_->GroupFastSyncReadEncoder(ids());
     if (!read) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "the gripper's encoders did not answer");
-      return;
+      return false;
     }
-    const auto stamp = now();
-    sensor_msgs::msg::JointState joints;
-    joints.header.stamp = stamp;
     for (const auto & hand : hands_) {
-      for (const auto & [id, encoder] : *read) if (id == hand->id) hand->opening = opening_of(*hand, encoder);
-      sensor_msgs::msg::JointState state;
-      state.header.stamp = stamp;
-      state.name = hand->joints;
-      state.position = {hand->opening, hand->opening};
-      hand->state->publish(state);
-      for (size_t i = 0; i < hand->joints.size(); ++i) {
-        joints.name.push_back(hand->joints[i] + "_joint");
-        joints.position.push_back((i == 0 ? 1.0 : -1.0) * hand->opening);   // finger 2's joint reads minus the opening
+      for (const auto & [id, encoder] : *read) {
+        if (id == hand->id) hand->opening = opening_of(*hand, encoder);
       }
     }
-    if (joint_states_) joint_states_->publish(joints);
+    return true;
   }
 
   std::unique_ptr<rb::DynamixelBus> bus_;
+#else
+  void start_real(const std::string &, bool) {
+    throw std::runtime_error("virtual: false needs the real gripper, but this gripper_driver was built without the "
+                             "RB-Y1 SDK (set RBY1_SDK_PATH and rebuild rby1_tools), or set virtual: true");
+  }
+
+  bool read_real() { return false; }
+#endif
+
+  bool virtual_ = true;
   std::vector<std::shared_ptr<Hand>> hands_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_;
   double max_opening_ = 0.05;
-  double homing_current_ = 0.3;
+  double open_opening_ = 0.05;
+  double speed_ = 0.05;
+  double dt_ = 0.02;
+  double homing_current_ = 0.5;
   double hold_current_ = 5.0;
   bool inverted_ = false;
   rclcpp::TimerBase::SharedPtr timer_;

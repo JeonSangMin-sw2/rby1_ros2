@@ -1,9 +1,9 @@
-"""The RB-Y1 gripper on the hands: its model on TF, its parts in the planning scene, and a
-controller that moves it (virtual) or drives the real one.
+"""The RB-Y1 gripper on the hands: its model on TF, its parts in the planning scene, and its
+driver, virtual or real.
 
-  ros2 launch rby1_tools gripper.launch.py                                 # model on TF, virtual controller
+  ros2 launch rby1_tools gripper.launch.py                                 # model on TF, virtual driver
   ros2 launch rby1_tools gripper.launch.py scene:=true                     # and its parts in the planning scene
-  ros2 launch rby1_tools gripper.launch.py controller:=real                # the gripper itself (on the UPC)
+  ros2 launch rby1_tools gripper.launch.py virtual:=false                  # the gripper itself (on the UPC)
   ros2 launch rby1_tools gripper.launch.py hands:=right                    # one hand only
   ros2 launch rby1_tools gripper.launch.py model:=false joint_states_topic:=/joint_states   # RB-Y1 v1.3
   ros2 topic pub --once /rby1/right_gripper/grasp std_msgs/msg/Bool "{data: true}"          # close
@@ -11,21 +11,20 @@ controller that moves it (virtual) or drives the real one.
 
 What starts, by flag:
   model       a robot_state_publisher per hand with model/rby1_gripper/gripper.urdf.xacro, mounted
-              on the robot's tool frame as config/gripper_mount.yaml says: the gripper's frames
+              on the robot's tool frame as config/gripper/gripper_mount.yaml says: the gripper's frames
               (gripper_<hand>, gripper_finger_<r|l>1, _2) on TF under ee_<hand>, and its meshes
               for RViz (RobotModel display, topic /gripper/<hand>/robot_description). Not for an
               RB-Y1 v1.3, whose URDF carries the gripper already.
   scene       the gripper's parts in the MoveIt planning scene, from model/rby1_gripper/gripper.yaml
               with the same mount applied (rby1_moveit_objects' objects.launch.py; needs a move_group).
-  controller  virtual: nothing moves, the fingers are reported going where they are told
-              (config/virtual_gripper.yaml). real: the gripper itself through the SDK's Dynamixel
-              bus (config/gripper_driver.yaml; built where the SDK is; the fingers move at start,
-              homing). none: a controller runs elsewhere.
-Either controller takes /rby1/<hand>_gripper/command (each finger's opening, m) and /grasp
-(true closes) and publishes /rby1/<hand>_gripper/state; the finger joints of the model get
-their states on `joint_states_topic`.
+Always: gripper_driver (config/gripper/gripper_driver.yaml), which takes /rby1/<hand>_gripper/grasp
+(true closes) and /command (each finger's opening, m) and publishes /rby1/<hand>_gripper/state;
+the finger joints of the model get their states on `joint_states_topic`. virtual (the
+settings' `virtual`, or this argument): nothing moves, the fingers are reported going where they
+are told; false: the gripper itself through the SDK's Dynamixel bus (built where the SDK is; the
+fingers move at start, homing). To keep the gripper on the UPC, run this launch there.
 
-The files: `urdf`, `mount`, `objects`, `config` (the controller's settings) are paths; empty
+The files: `urdf`, `mount`, `objects`, `config` (the driver's settings) are paths; empty
 means the one of this package named above.
 """
 
@@ -46,14 +45,14 @@ from launch_ros.parameter_descriptions import ParameterValue
 ARGUMENTS = {
     'model': ('true', "the gripper's model on TF and for RViz (not for an RB-Y1 v1.3)"),
     'scene': ('false', "the gripper's parts in the MoveIt planning scene (needs a move_group)"),
-    'controller': ('virtual', 'virtual, real or none'),
+    'virtual': ('', "true: nothing moves; false: the gripper itself; empty: the settings' virtual"),
     'hands': ('right,left', 'right, left, or both'),
     'joint_states_topic': ('', "where the finger joints' states go; empty: /gripper/joint_states when model is on "
                                '(RB-Y1 v1.3: /joint_states), else nowhere'),
     'urdf': ('', "the gripper's URDF xacro; empty: model/rby1_gripper/gripper.urdf.xacro"),
-    'mount': ('', 'where each gripper sits on the robot; empty: config/gripper_mount.yaml'),
+    'mount': ('', 'where each gripper sits on the robot; empty: config/gripper/gripper_mount.yaml'),
     'objects': ('', "the gripper's parts for the planning scene; empty: model/rby1_gripper/gripper.yaml"),
-    'config': ('', "the controller's settings; empty: config/virtual_gripper.yaml or config/gripper_driver.yaml"),
+    'config': ('', "the driver's settings; empty: config/gripper/gripper_driver.yaml"),
 }
 
 
@@ -123,10 +122,10 @@ def setup(context):
     for hand in hands:
         if hand not in ('right', 'left'):
             raise RuntimeError(f"hands are right and/or left, not '{hand}'")
-    if value['controller'] not in ('virtual', 'real', 'none'):
-        raise RuntimeError(f"controller is virtual, real or none, not '{value['controller']}'")
+    if value['virtual'].lower() not in ('', 'true', 'false'):
+        raise RuntimeError(f"virtual is true or false (or empty: the settings'), not '{value['virtual']}'")
     urdf = value['urdf'] or os.path.join(share, 'model', 'rby1_gripper', 'gripper.urdf.xacro')
-    mount_path = value['mount'] or os.path.join(share, 'config', 'gripper_mount.yaml')
+    mount_path = value['mount'] or os.path.join(share, 'config', 'gripper', 'gripper_mount.yaml')
     objects_path = value['objects'] or os.path.join(share, 'model', 'rby1_gripper', 'gripper.yaml')
     with open(mount_path) as stream:
         mount = yaml.safe_load(stream)
@@ -154,16 +153,12 @@ def setup(context):
             PythonLaunchDescriptionSource(os.path.join(
                 get_package_share_directory('rby1_moveit_objects'), 'launch', 'objects.launch.py')),
             launch_arguments={'config': mounted_objects(objects_path, mount, hands)}.items()))
-    if value['controller'] == 'virtual':
-        nodes.append(Node(
-            package='rby1_tools', executable='virtual_gripper', name='virtual_gripper', output='screen',
-            parameters=[value['config'] or os.path.join(share, 'config', 'virtual_gripper.yaml'),
-                        {'hands': hands, 'joint_states_topic': joint_states_topic}]))
-    elif value['controller'] == 'real':
-        nodes.append(Node(
-            package='rby1_tools', executable='gripper_driver', name='gripper_driver', output='screen',
-            parameters=[value['config'] or os.path.join(share, 'config', 'gripper_driver.yaml'),
-                        {'hands': hands, 'joint_states_topic': joint_states_topic}]))
+    overrides = {'hands': hands, 'joint_states_topic': joint_states_topic}
+    if value['virtual']:
+        overrides['virtual'] = value['virtual'].lower() == 'true'
+    nodes.append(Node(
+        package='rby1_tools', executable='gripper_driver', name='gripper_driver', output='screen',
+        parameters=[value['config'] or os.path.join(share, 'config', 'gripper', 'gripper_driver.yaml'), overrides]))
     return nodes
 
 

@@ -14,7 +14,7 @@ configurations and planners, the robot description, examples and tools.
 
 ## Architecture
 
-![System Architecture](../img/system_architecture.png)
+[![System Architecture](../img/architecture.svg)](../img/architecture.svg)
 
 Two paths lead to the robot, and they share one connection rule: the robot takes commands from one owner at a time.
 
@@ -29,35 +29,6 @@ Two paths lead to the robot, and they share one connection rule: the robot takes
    streams joint positions to the robot over its own gRPC connection, and asks the running driver for power, servos
    and the **control right** (`/rby1/hardware_control`): while it holds the right, the driver refuses its own command
    sources; Ctrl+C on the controller manager returns it. Details: [Hardware Interface](05_hardware_interface.md).
-
-```mermaid
-graph TD
-    subgraph user_space ["User space"]
-        UserNode[Examples / your nodes]
-        Executor[rby1_moveit_executor]
-        MoveIt[MoveIt 2 move_group + ros2_control controllers]
-    end
-
-    subgraph driver_control ["ROS 2 control and driver layer"]
-        subgraph driver ["rby1_ros2_driver"]
-            DriverState[State publisher]
-            DriverSrv[Services]
-            DriverAction[Actions and command streams]
-        end
-        HWInterface[rby1_hardware::RBY1SystemHardware]
-    end
-
-    Robot[RB-Y1 robot / simulator]
-
-    UserNode -->|topics, services, actions| DriverSrv
-    UserNode --> DriverAction
-    Executor -->|follow_joint_trajectory| DriverAction
-    MoveIt -->|read / write| HWInterface
-    HWInterface -->|hardware_control, robot_power, robot_servo| DriverSrv
-    DriverState -->|gRPC| Robot
-    DriverAction -->|gRPC| Robot
-    HWInterface -->|gRPC command stream| Robot
-```
 
 Everything of the robot is under the driver's namespace, `/rby1/` by default (`/rby1/robot_joint`,
 `/rby1/joint_overall_states`). What belongs to one part is `/rby1/<part>/<what>` (`/rby1/right_arm/target_pose`);
@@ -75,7 +46,7 @@ what a tool offers is `/rby1/<tool>/<what>`; camera images are not the robot's a
 | `rby1_moveit_{a,m}_{1_0,…}` | MoveIt 2 configuration per model and version (SRDF, kinematics, joint limits, controllers) with `demo.launch.py` | [MoveIt — demo.launch.py](06_moveit.md#demolaunchpy) |
 | `rby1_moveit_executor` | A planner that takes tool pose targets, plans with MoveIt (OMPL) around the planning scene and runs the result through the driver | [MoveIt — Executor](06_moveit.md#executor-rby1_moveit_executor) |
 | `rby1_moveit_objects` | Objects in the planning scene: obstacles (`scene`), modules on the robot (`objects.launch.py`), an obstacle kept where a topic says | [MoveIt — Objects](06_moveit.md#objects-rby1_moveit_objects), [Scene](06_moveit.md#scene) |
-| `rby1_tools` | Camera publishers and their mount, the gripper (model, planning-scene parts, virtual and real controller) | [Tools](07_tools.md) |
+| `rby1_tools` | Camera publishers and their mount, the LiDARs, the gripper (model, planning-scene parts, its driver, virtual or real) | [Tools](07_tools.md) |
 | `rby1_bringup` | One launch file that starts the driver and whatever runs with it, by flags | [Bringup](#bringup-rby1_bringup) |
 | `rby1_navigation` | Not finished; not described here | — |
 
@@ -151,15 +122,15 @@ ros2 launch rby1_bringup bringup.launch.py
 | `ROS2_CONTROL` | `ros2_control` with the hardware plugin, without MoveIt (not together with `MOVEIT_DEMO`) | `ros2_control`: `use_fake_hardware` (which robot: the top of `rby1_hardware`'s launch file) | [Hardware Interface](05_hardware_interface.md#using-it-without-moveit) |
 | `SCENE` | obstacles loaded into the planning scene | `scene`: `config` | [Scene](06_moveit.md#scene) |
 | `OBJECTS` | modules on the robot or fixtures in the planning scene | `objects`: `config` | [Objects](06_moveit.md#objects-rby1_moveit_objects) |
-| `CAMERA` | the camera publisher | `camera`: `camera`, `config`, `source`, `intrinsics`, `mount` | [Camera](07_tools.md#camera) |
-| `GRIPPER` | the gripper on the hands: its model on TF, its parts in the planning scene, a virtual or the real controller | `gripper`: `model`, `scene`, `controller`, `hands`, `mount`, `config` | [Gripper](07_tools.md#gripper) |
+| `CAMERA` | the camera publisher | `camera`: `camera`, `camera_name`, `config`, `mount` | [Camera](07_tools.md#camera) |
+| `GRIPPER` | the gripper on the hands: its model on TF, its parts in the planning scene, its driver, virtual or real | `gripper`: `model`, `scene`, `virtual`, `hands`, `mount`, `config` | [Gripper](07_tools.md#gripper) |
 
 Before anything starts the launch checks the combination and stops with one line when it is wrong — a missing
 section, a bad model or address, planner and demo together, a demo package that is not built or is for the other
 model, an RB-Y1 v1.3 (`moveit_executor.version: 1.3`) with the gripper's model or scene switched on (its robot model
 carries the gripper), nothing switched on at all — and prints a warning when something will wait: the scene or the
 objects without a `move_group` started here, a v1.3 without `GRIPPER` (its finger joints get their states from the
-gripper controller). The planner is included 3 s after the driver (it looks the driver up while it starts), the
+gripper driver). The planner is included 3 s after the driver (it looks the driver up while it starts), the
 scene, the objects and a gripper with its scene on once `move_group` is up.
 
 ## Troubleshooting

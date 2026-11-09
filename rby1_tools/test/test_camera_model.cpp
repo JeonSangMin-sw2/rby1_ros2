@@ -115,3 +115,48 @@ TEST(Intrinsics, BadFilesSayWhy) {
   const auto path = write_file("rby1_intrinsics_bad.yaml", "width: 1280\nheight: 720\ncamera_matrix: [[1, 0], [0, 1]]\n");
   EXPECT_THROW(read_intrinsics(path), std::runtime_error);
 }
+
+TEST(Names, TopicsAndFramesFollowTheCameraName) {
+  EXPECT_EQ(stream_topic("camera", "rgb"), "/camera/rgb");
+  EXPECT_EQ(stream_topic("wrist_2", "ir_left"), "/wrist_2/ir_left");
+  EXPECT_EQ(point_cloud_topic("camera"), "/camera/point_cloud");
+  EXPECT_EQ(frame_name("camera", "optical_frame"), "camera_optical_frame");  // the frames before camera_name
+  EXPECT_EQ(frame_name("head", "link"), "head_link");
+  for (const char * bad : {"", "2cam", "my camera", "cam/era", "cam-1"}) {
+    EXPECT_THROW(stream_topic(bad, "rgb"), std::invalid_argument) << bad;
+    EXPECT_THROW(frame_name(bad, "link"), std::invalid_argument) << bad;
+  }
+}
+
+TEST(Mount, NamedEntriesAreRead) {
+  const auto path = write_file("rby1_camera_mount.yaml", R"(head:
+  parent: link_head_2
+  xyz: [0.022, 0.0, 0.04]
+  rpy: [0.0, 0.0, 0.0]
+wrist:
+  parent: ee_right
+  xyz: [0.0, 0.05, 0.1]
+  rpy: [0.0, 1.5708, 0.0]
+)");
+  const auto head = read_mount(path, "head");
+  EXPECT_EQ(head.parent, "link_head_2");
+  EXPECT_NEAR(head.xyz[0], 0.022, 1e-12);
+  EXPECT_NEAR(head.xyz[2], 0.04, 1e-12);
+  const auto wrist = read_mount(path, "wrist");
+  EXPECT_EQ(wrist.parent, "ee_right");
+  EXPECT_NEAR(wrist.rpy[1], 1.5708, 1e-12);
+}
+
+TEST(Mount, MissingOrBadEntriesSayWhy) {
+  const auto path = write_file("rby1_camera_mount_names.yaml",
+                               "head:\n  parent: link_head_2\n  xyz: [0, 0, 0]\n  rpy: [0, 0, 0]\n"
+                               "short:\n  parent: link_head_2\n  xyz: [0, 0]\n  rpy: [0, 0, 0]\n");
+  try {
+    read_mount(path, "chest");
+    FAIL() << "a missing mount must throw";
+  } catch (const std::runtime_error & error) {
+    EXPECT_NE(std::string(error.what()).find("head, short"), std::string::npos) << error.what();  // lists the names
+  }
+  EXPECT_THROW(read_mount(path, "short"), std::runtime_error);  // xyz needs 3 values
+  EXPECT_THROW(read_mount("/nonexistent/camera_mount.yaml", "head"), std::runtime_error);
+}

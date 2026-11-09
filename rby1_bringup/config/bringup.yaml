@@ -34,16 +34,15 @@ objects:                      # rby1_moveit_objects/launch/objects.launch.py (mo
   config: ""                  # the gripper is gripper.scene below). A YAML of its config/, <package>/<path>, or a path; "": its config/objects.yaml
 
 camera:                       # rby1_tools/launch/camera.launch.py
-  camera: webcam              # webcam, realsense or file
-  config: ""                  # settings YAML; "": its config/webcam.yaml or config/realsense.yaml
-  source: ""                  # webcam: device (0, /dev/video0); file: image or video path; "": the config's
-  intrinsics: ""              # calibration YAML; "": the config's
-  mount: ""                   # camera mount YAML; "": its config/camera_mount.yaml
+  camera: realsense           # realsense, or webcam (a device, an image or a video file)
+  camera_name: camera         # first part of its topics and frames: /camera/rgb/raw, camera_link
+  config: ""                  # settings YAML (source, streams, compressed, ...); "": its config/camera/<camera>.yaml
+  mount: head_default         # a name in its config/camera/camera_mount.yaml; none: on no link
 
 gripper:                      # rby1_tools/launch/gripper.launch.py (the gripper on the hands)
   model: true                 # its model on TF and for RViz. false on an RB-Y1 v1.3: its robot model has the gripper
   scene: true                # its parts in the planning scene (needs the planner or the demo)
-  controller: virtual         # virtual (nothing moves), real (the gripper itself, on the UPC; the fingers move at start) or none
+  virtual: ""                 # true (nothing moves), false (the gripper itself, on the UPC; the fingers move at start); "": its settings'
   hands: right,left
-  mount: ""                   # where it sits on the robot; "": its config/gripper_mount.yaml
-  config: ""                  # the controller's settings; "": its config/virtual_gripper.yaml or gripper_driver.yaml
+  mount: ""                   # where it sits on the robot; "": its config/gripper/gripper_mount.yaml
+  config: ""                  # the driver's settings; "": its config/gripper/gripper_driver.yaml

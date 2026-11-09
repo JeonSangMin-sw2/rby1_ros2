@@ -1,4 +1,5 @@
-// Camera sources and a pinhole model for cameras nobody has calibrated yet.
+// Camera sources, a pinhole model for cameras nobody has calibrated yet, and the names and
+// mount a camera is published under.
 #pragma once
 
 #include <array>
@@ -21,7 +22,7 @@ Source parse_source(const std::string & source);
 
 // A distortion-free pinhole CameraInfo from the horizontal field of view -- enough to
 // start with; AprilTag distances are only as good as this guess until the camera is
-// calibrated (use_custom_intrinsics with an intrinsics_file).
+// calibrated (an intrinsics_file).
 sensor_msgs::msg::CameraInfo approximate_camera_info(int width, int height, double horizontal_fov_deg,
                                                      const std::string & frame_id);
 
@@ -44,5 +45,21 @@ Intrinsics read_intrinsics(const std::string & path);
 // file was measured at another size with the same aspect ratio (refused otherwise).
 sensor_msgs::msg::CameraInfo camera_info(const Intrinsics & intrinsics, int width, int height,
                                          const std::string & frame_id);
+
+// Names from `camera_name` (a letter, then letters, digits or _), so that several cameras
+// can run side by side. A stream (rgb, depth, ir_left, ir_right) has its image on
+// /<camera_name>/<stream>/raw or .../compressed and its CameraInfo on .../info.
+std::string stream_topic(const std::string & camera_name, const std::string & stream);  // /<camera_name>/<stream>
+std::string point_cloud_topic(const std::string & camera_name);                         // /<camera_name>/point_cloud
+std::string frame_name(const std::string & camera_name, const std::string & frame);     // <camera_name>_<frame>
+
+// Where a camera sits: <camera_name>_link at `xyz` (m) and `rpy` (rad) in `parent`.
+struct Mount {
+  std::string parent;
+  std::array<double, 3> xyz{}, rpy{};
+};
+
+// The mount called `name` in a mount YAML (one entry per name: parent, xyz, rpy).
+Mount read_mount(const std::string & path, const std::string & name);
 
 }  // namespace rby1_tools
