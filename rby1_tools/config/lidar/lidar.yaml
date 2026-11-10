@@ -7,6 +7,8 @@
 # Two sensors by default (type A: front left and right); up to four with the rear pair below.
 # The places are reference values from rby1_ros2_SLAM_NAV's data_fusion.launch.py (on its
 # base_link), not measured on this robot: measure and change them.
+# a front left : [0.2525, 0.1765, 0.22282]
+# m front left : [0.2725, 0.22, 0.2341]
 lidar_front_left:
   ros__parameters:
     lidar_name: lidar_front_left
@@ -14,7 +16,7 @@ lidar_front_left:
     host_ip: 0.0.0.0                 # this PC's address to listen on; 0.0.0.0: all
     port: 2367                       # the sensor's host port; each sensor its own
     parent: base                     # the frame it is placed on; "": no TF
-    xyz: [0.228, 0.1765, 0.22282]    # m, in parent
+    xyz: [0.2525, 0.1765, 0.22282]    # m, in parent
     rpy: [0.0, 0.0, 0.959931]        # rad, in parent (yaw 55 deg); an upside-down sensor: roll pi
     range_min: 0.0                   # m, for the LaserScan message
     range_max: 100.0
@@ -25,7 +27,7 @@ lidar_front_right:
     host_ip: 0.0.0.0
     port: 2368
     parent: base
-    xyz: [0.228, -0.1765, 0.22282]
+    xyz: [0.2525, -0.1765, 0.22282]
     rpy: [0.0, 0.0, -0.959931]       # yaw -55 deg
     range_min: 0.0
     range_max: 100.0
