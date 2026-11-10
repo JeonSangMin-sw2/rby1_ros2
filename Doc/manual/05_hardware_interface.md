@@ -1,6 +1,6 @@
 # Hardware Interface (`rby1_hardware`)
 
-[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md)
+[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md) · [UPC Topic Bridge](08_upc_topic_bridge.md)
 
 `rby1_hardware/RBY1SystemHardware` is a `ros2_control` `SystemInterface` plugin: a controller manager
 (`ros2_control_node`) loads it from the `<ros2_control>` block of the robot's URDF and runs the standard controllers

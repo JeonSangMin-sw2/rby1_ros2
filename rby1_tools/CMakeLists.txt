@@ -29,6 +29,7 @@ find_package(Eigen3 REQUIRED)
 
 add_library(${PROJECT_NAME}_core STATIC src/camera_model.cpp src/lidar_model.cpp)
 target_include_directories(${PROJECT_NAME}_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME}_core SYSTEM PRIVATE ${EIGEN3_INCLUDE_DIR})
 ament_target_dependencies(${PROJECT_NAME}_core sensor_msgs)
 target_link_libraries(${PROJECT_NAME}_core yaml-cpp)
 
@@ -81,8 +82,16 @@ endif()
 add_executable(lidar_publisher src/lidar_publisher.cpp)
 target_link_libraries(lidar_publisher ${PROJECT_NAME}_core)
 ament_target_dependencies(lidar_publisher rclcpp sensor_msgs geometry_msgs tf2 tf2_ros)
+# Their scans as one on the base (merge: true), and a one-off check of where they sit.
+add_executable(lidar_merger src/lidar_merger.cpp)
+target_link_libraries(lidar_merger ${PROJECT_NAME}_core)
+ament_target_dependencies(lidar_merger rclcpp sensor_msgs geometry_msgs tf2 tf2_ros)
+add_executable(lidar_calibrate src/lidar_calibrate.cpp)
+target_link_libraries(lidar_calibrate ${PROJECT_NAME}_core)
+ament_target_dependencies(lidar_calibrate rclcpp sensor_msgs)
 
-install(TARGETS camera_publisher gripper_driver lidar_publisher DESTINATION lib/${PROJECT_NAME})
+install(TARGETS camera_publisher gripper_driver lidar_publisher lidar_merger lidar_calibrate
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch model DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

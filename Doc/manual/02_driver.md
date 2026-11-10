@@ -1,6 +1,6 @@
 # Driver (`rby1_driver`)
 
-[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md)
+[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md) · [UPC Topic Bridge](08_upc_topic_bridge.md)
 
 The driver node `rby1_ros2_driver` connects to the robot or the simulator over gRPC, publishes its state every 10 ms
 (100 Hz, the rate the robot gives it; 97–100 Hz measured, depending on the PC) and takes commands as services and

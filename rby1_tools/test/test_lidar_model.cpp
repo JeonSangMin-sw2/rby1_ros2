@@ -1,7 +1,10 @@
-// LakiBeam1 packets and the turns they add up to, from packets built here; no ROS graph, no sensor.
+// LakiBeam1 packets and the turns they add up to, from packets built here, and scans put together
+// or matched, from a floor plan cast here; no ROS graph, no sensor.
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "rby1_tools/lidar_model.hpp"
@@ -86,4 +89,119 @@ TEST(Assembler, AWholeTurnIsPublishedOnceAndThePartFirstOneIsNot) {
   EXPECT_FLOAT_EQ(ranges[400], 1.0f);  // azimuth 100 deg: 1000 mm
   EXPECT_TRUE(std::isinf(ranges[200]));  // 50 deg, in the blank part
   EXPECT_FLOAT_EQ(assembler.intensities()[400], 7.0f);
+}
+
+namespace {
+
+struct Segment {
+  double x0, y0, x1, y1;
+};
+
+// A room 8 x 5.5 m with a box and a pillar in it, seen by a level LakiBeam1 (270 deg, 0.25 deg)
+// at `pose` on the floor plan; every range off by up to `noise` m (a fixed pseudo-random sequence).
+const std::vector<Segment> kRoom{
+    {-3.0, -2.5, 5.0, -2.5}, {5.0, -2.5, 5.0, 3.0}, {5.0, 3.0, -3.0, 3.0}, {-3.0, 3.0, -3.0, -2.5},
+    {1.5, 0.5, 2.0, 0.5},    {2.0, 0.5, 2.0, 1.2},  {2.0, 1.2, 1.5, 1.2},  {1.5, 1.2, 1.5, 0.5},
+    {3.0, -1.2, 3.3, -1.2},  {3.3, -1.2, 3.3, -0.9}, {3.3, -0.9, 3.0, -0.9}, {3.0, -0.9, 3.0, -1.2}};
+
+ScanData scan_of(const std::vector<Segment> & world, const Pose2 & pose, double noise, double range_max = 30.0) {
+  ScanData scan;
+  scan.angle_min = static_cast<float>(-M_PI);
+  scan.angle_increment = static_cast<float>(2.0 * M_PI / 1440.0);
+  scan.range_max = static_cast<float>(range_max);
+  scan.ranges.assign(1440, std::numeric_limits<float>::infinity());
+  uint32_t seed = 12345;
+  for (size_t i = 0; i < scan.ranges.size(); ++i) {
+    seed = seed * 1664525u + 1013904223u;
+    const double angle = scan.angle_min + i * static_cast<double>(scan.angle_increment);
+    if (std::abs(angle) > 135.0 * M_PI / 180.0) continue;  // behind the sensor
+    const double dx = std::cos(pose.yaw + angle), dy = std::sin(pose.yaw + angle);
+    double best = range_max;
+    for (const auto & w : world) {
+      const double ex = w.x1 - w.x0, ey = w.y1 - w.y0;
+      const double det = ex * dy - ey * dx;
+      if (std::abs(det) < 1e-12) continue;
+      const double t = (ex * (w.y0 - pose.y) - ey * (w.x0 - pose.x)) / det;     // along the beam
+      const double u = (dx * (w.y0 - pose.y) - dy * (w.x0 - pose.x)) / det;     // along the wall
+      if (t > 0.0 && t < best && u >= 0.0 && u <= 1.0) best = t;
+    }
+    if (best < range_max) scan.ranges[i] = static_cast<float>(best + noise * ((seed >> 8) / 8388608.0 - 1.0));
+  }
+  return scan;
+}
+
+Pose3 level(const Pose2 & p) { return pose_from_xyz_rpy({p.x, p.y, 0.22}, {0.0, 0.0, p.yaw}); }
+
+Pose2 moved(const Pose2 & p, const Pose2 & by) {
+  const double c = std::cos(by.yaw), s = std::sin(by.yaw);
+  return {c * p.x - s * p.y + by.x, s * p.x + c * p.y + by.y, p.yaw + by.yaw};
+}
+
+}  // namespace
+
+TEST(Pose, RpyRoundTripsAsTf) {
+  const auto rpy = rpy_of(pose_from_xyz_rpy({0.2, -0.1, 0.3}, {0.1, -0.2, 0.959931}));
+  EXPECT_NEAR(rpy[0], 0.1, 1e-12);
+  EXPECT_NEAR(rpy[1], -0.2, 1e-12);
+  EXPECT_NEAR(rpy[2], 0.959931, 1e-12);
+  const auto flipped = rpy_of(pose_from_xyz_rpy({0.0, 0.0, 0.0}, {M_PI, 0.0, -0.5}));  // upside down
+  EXPECT_NEAR(std::abs(flipped[0]), M_PI, 1e-12);
+  EXPECT_NEAR(flipped[2], -0.5, 1e-12);
+}
+
+TEST(ScanPoints, PlacesEachReturnByThePose) {
+  ScanData scan;
+  scan.angle_min = 0.0f;
+  scan.angle_increment = static_cast<float>(M_PI / 2.0);
+  scan.range_min = 0.1f;
+  scan.range_max = 10.0f;
+  scan.ranges = {2.0f, std::numeric_limits<float>::infinity(), 0.05f, 20.0f};  // only the first counts
+  scan.intensities = {9.0f, 0.0f, 0.0f, 0.0f};
+  const auto points = scan_points(scan, pose_from_xyz_rpy({1.0, 0.0, 0.5}, {0.0, 0.0, M_PI / 2.0}));
+  ASSERT_EQ(points.size(), 1u);
+  EXPECT_NEAR(points[0].x, 1.0, 1e-9);  // 2 m ahead of a sensor turned to +y
+  EXPECT_NEAR(points[0].y, 2.0, 1e-9);
+  EXPECT_FLOAT_EQ(points[0].intensity, 9.0f);
+
+  scan.ranges = {std::numeric_limits<float>::infinity(), 2.0f, std::numeric_limits<float>::quiet_NaN(), 0.0f};
+  const auto flipped = scan_points(scan, pose_from_xyz_rpy({0.0, 0.0, 0.0}, {M_PI, 0.0, 0.0}));
+  ASSERT_EQ(flipped.size(), 1u);
+  EXPECT_NEAR(flipped[0].y, -2.0, 1e-9);  // its left is the frame's right
+}
+
+TEST(Merge, EachSectorKeepsItsNearestFromTheOrigin) {
+  std::vector<Point2> points{{2.0, 0.0, 1.0f}, {1.0, 0.0, 2.0f}, {-1.0, 0.0, 3.0f}, {0.0, 0.05, 4.0f},
+                             {0.0, 50.0, 5.0f}};
+  std::vector<float> ranges, intensities;
+  merge_points(points, 4, 0.1, 10.0, ranges, intensities);  // sectors from -pi: [-pi,-pi/2) .. [pi/2,pi)
+  ASSERT_EQ(ranges.size(), 4u);
+  EXPECT_FLOAT_EQ(ranges[2], 1.0f);  // angle 0: the nearer of 2 m and 1 m
+  EXPECT_FLOAT_EQ(intensities[2], 2.0f);
+  EXPECT_FLOAT_EQ(ranges[0], 1.0f);  // angle +pi is -pi: sector 0, not one past the end
+  EXPECT_TRUE(std::isinf(ranges[1]));
+  EXPECT_TRUE(std::isinf(ranges[3]));  // 5 cm is under range_min, 50 m over range_max
+}
+
+TEST(Align, FindsHowFarOffASensorIsPlaced) {
+  const Pose2 left{0.2525, 0.1765, 0.959931}, right{0.2525, -0.1765, -0.959931};
+  const Pose2 believed = moved(right, {0.03, -0.02, 1.5 * M_PI / 180.0});  // the settings are off
+  const auto reference = scan_points(scan_of(kRoom, left, 0.003), level(left));
+  const auto moving = scan_points(scan_of(kRoom, right, 0.003), level(believed));
+  const auto a = align_points(reference, moving);
+  ASSERT_TRUE(a.converged);
+  EXPECT_FALSE(a.degenerate);
+  EXPECT_GE(a.matches, kMinMatches);
+  const Pose2 found = moved(believed, a.correction);
+  EXPECT_NEAR(found.x, right.x, 0.003);
+  EXPECT_NEAR(found.y, right.y, 0.003);
+  EXPECT_NEAR(found.yaw, right.yaw, 0.1 * M_PI / 180.0);
+  EXPECT_LT(a.rms, 0.005);
+}
+
+TEST(Align, ACorridorDoesNotPinItsLength) {
+  const std::vector<Segment> corridor{{-100.0, -1.0, 100.0, -1.0}, {-100.0, 1.0, 100.0, 1.0}};
+  const Pose2 left{0.2525, 0.1765, 0.959931}, right{0.2525, -0.1765, -0.959931};
+  const auto reference = scan_points(scan_of(corridor, left, 0.003, 15.0), level(left));
+  const auto moving = scan_points(scan_of(corridor, right, 0.003, 15.0), level(moved(right, {0.05, 0.0, 0.0})));
+  EXPECT_TRUE(align_points(reference, moving).degenerate);
 }

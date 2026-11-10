@@ -9,6 +9,12 @@
 # base_link), not measured on this robot: measure and change them.
 # a front left : [0.2525, 0.1765, 0.22282]
 # m front left : [0.2725, 0.22, 0.2341]
+/**:
+  ros__parameters:
+    # false: each sensor on its own /<lidar_name>/scan.
+    # true: all of them as one scan on lidar_merger's target_frame, /lidar_merged/scan, and no
+    # topic of each (they go to lidar_merger on the hidden /<lidar_name>/_scan).
+    merge: false
 lidar_front_left:
   ros__parameters:
     lidar_name: lidar_front_left
@@ -31,6 +37,26 @@ lidar_front_right:
     rpy: [0.0, 0.0, -0.959931]       # yaw -55 deg
     range_min: 0.0
     range_max: 100.0
+
+# merge: true -- the sensors started (lidar.launch.py's flags) as one 360 deg scan seen from
+# target_frame's origin, each sector its nearest return. A sensor that goes quiet holds it.
+lidar_merger:
+  ros__parameters:
+    target_frame: base
+    bins: 1440                       # sectors in 360 deg (1440: 0.25 deg, as the sensors)
+    range_min: 0.0                   # m from target_frame's origin; nearer or farther are dropped
+    range_max: 100.0
+    timeout: 1.0                     # s without a scan from a sensor before warning
+
+# lidar_calibrate.launch.py: each sensor's xyz and rpy against `reference`, from what they see in
+# common, printed for this file. Only x, y and yaw; the reference stays as set (measure it).
+lidar_calibrate:
+  ros__parameters:
+    reference: lidar_front_left
+    scan_pairs: 20                   # scans matched; the mean and spread are printed
+    timeout: 15.0                    # s to collect them
+    max_correction: 0.10             # m; past this or max_correction_deg nothing is offered
+    max_correction_deg: 5.0
 
 # Four sensors: uncomment the rear pair and start them (lidar.launch.py rear_left:=true rear_right:=true).
 # Their addresses, ports and places are placeholders, not from any robot: the front pair turned to the rear.

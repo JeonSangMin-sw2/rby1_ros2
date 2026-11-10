@@ -5,7 +5,8 @@
 //   ros2 launch rby1_tools lidar.launch.py            # left and right, on the PC the sensors send to
 //
 // Publishes /<lidar_name>/scan (sensor_msgs/LaserScan, in <lidar_name>_link: angle -pi at the
-// sensor's azimuth 0, rising with it, as the vendor's driver lays it out) and, when `parent` is
+// sensor's azimuth 0, rising with it, as the vendor's driver lays it out; with `merge: true` on the
+// hidden /<lidar_name>/_scan instead, for lidar_merger only) and, when `parent` is
 // set, the sensor's place as static TF <parent> -> <lidar_name>_link (`xyz` m, `rpy` rad). An
 // upside-down sensor is a roll of pi there. Packets from anyone but `sensor_ip` (when set) are
 // ignored.
@@ -32,6 +33,7 @@
 
 #include "rby1_tools/camera_model.hpp"
 #include "rby1_tools/lidar_model.hpp"
+#include "rby1_tools/lidar_node.hpp"
 
 class LidarPublisher : public rclcpp::Node {
 public:
@@ -45,6 +47,7 @@ public:
     const auto rpy = declare_parameter("rpy", std::vector<double>{0.0, 0.0, 0.0});
     range_min_ = declare_parameter("range_min", 0.0);
     range_max_ = declare_parameter("range_max", 100.0);
+    const bool merge = declare_parameter("merge", false);  // the scan to lidar_merger only
     if (xyz.size() != 3 || rpy.size() != 3) throw std::invalid_argument("xyz and rpy need 3 values each");
     if (port_ == 0) {
       throw std::invalid_argument("no port for " + std::string(get_name()) + ": give it its section in the settings "
@@ -52,7 +55,7 @@ public:
     }
     if (port_ < 0 || port_ > 65535) throw std::invalid_argument("port must be 1..65535");
     frame_ = rby1_tools::frame_name(lidar_name, "link");
-    const auto topic = rby1_tools::stream_topic(lidar_name, "scan");
+    const auto topic = rby1_tools::lidar_scan_topic(lidar_name, merge);
     scan_pub_ = create_publisher<sensor_msgs::msg::LaserScan>(topic, 10);
 
     if (!parent.empty()) {

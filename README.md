@@ -27,7 +27,7 @@ The system operates using two primary pipelines to interface with the robot:
 1. **Direct Control Mode (`rby1_ros2_driver`)**: A standalone C++ ROS 2 node that communicates directly with the RBY1 robot or simulator via gRPC. User applications/scripts send standard ROS 2 topics, services, and actions (e.g. `robot_joint`, `robot_cartesian`) to command movements and monitor status.
 2. **`ros2_control` Integration (`rby1_hardware`)**: Bridges `ros2_control` — with MoveIt 2, or its trajectory controllers alone — to the robot via a custom `RBY1SystemHardware` interface plugin. The hardware plugin streams command inputs to the robot via a direct gRPC connection, while querying status and coordinating power, servo states, and control rights with the `rby1_ros2_driver` node via internal ROS 2 service calls (like `/hardware_control`).
 
-The manual, one page per topic: [Overview](Doc/manual/01_overview.md), [Driver](Doc/manual/02_driver.md), [Examples](Doc/manual/03_examples.md), [Description](Doc/manual/04_description.md), [Hardware Interface](Doc/manual/05_hardware_interface.md), [MoveIt](Doc/manual/06_moveit.md), [Tools](Doc/manual/07_tools.md).
+The manual, one page per topic: [Overview](Doc/manual/01_overview.md), [Driver](Doc/manual/02_driver.md), [Examples](Doc/manual/03_examples.md), [Description](Doc/manual/04_description.md), [Hardware Interface](Doc/manual/05_hardware_interface.md), [MoveIt](Doc/manual/06_moveit.md), [Tools](Doc/manual/07_tools.md), [UPC Topic Bridge](Doc/manual/08_upc_topic_bridge.md).
 
 ---
 
@@ -102,7 +102,7 @@ sudo nano ~/.bashrc
 
 # Add at the bottom:
 export PATH=/opt/cmake/bin:$PATH
-export RBY1_SDK_PATH=$HOME/sdk/rby1-sdk    # the SDK of 1-2
+export RBY1_SDK_PATH=$HOME/rby1-sdk    # the SDK of 1-2
 source /opt/ros/humble/setup.bash          # jazzy on Ubuntu 24.04
 
 # Apply changes
@@ -117,16 +117,20 @@ choose a number from 0 to 101 that nothing else on the network uses, and set it 
 
 ```bash
 # for this terminal only: type it in every terminal you use
-export ROS_DOMAIN_ID=30
+export ROS_DOMAIN_ID=77
 
 # always: new terminals get it from ~/.bashrc
-echo 'export ROS_DOMAIN_ID=30' >> ~/.bashrc
+echo 'export ROS_DOMAIN_ID=77' >> ~/.bashrc
 source ~/.bashrc
 ```
 
 Everything that has to talk to the driver — examples, MoveIt, tools on another PC or in a container — needs the same
 number. Check with `echo $ROS_DOMAIN_ID` (an empty line means 0) and `ros2 node list`, which shows
 `/rby1/rby1_ros2_driver` from any terminal of the same domain.
+
+> [!IMPORTANT]
+> ## Using the UPC from a PC on the RPC's wireless network (AP)? Read [Manual — UPC Topic Bridge](Doc/manual/08_upc_topic_bridge.md) first.
+> ROS 2 does not reach the UPC through the RPC on its own; the manual sets up the bridge (RPC 0.11.0 or later).
 
 ### 1-6. Build
 
@@ -381,6 +385,8 @@ In `rby1_bringup` this is the `ROS2_CONTROL` flag. Details: [Manual — Hardware
 | gripper | `gripper.launch.py` | The RB-Y1 gripper on the hands, by flag: `model` (its URDF and meshes, `model/rby1_gripper/`, on TF under `ee_right`/`ee_left` for RViz), `scene` (its body and fingers as parts in the MoveIt planning scene, `model/rby1_gripper/gripper.yaml`), and always its driver. Where it sits on each hand: `config/gripper/gripper_mount.yaml` |
 | `gripper_driver` | `gripper.launch.py [virtual:=false]` | `/rby1/<hand>_gripper/grasp` (true closes) and `/command` (each finger's opening, m) in, the fingers' state out (`config/gripper/gripper_driver.yaml`, positions 0 closed .. 1000 open). `virtual: true`: nothing moves. `virtual: false`: the gripper itself through the SDK's Dynamixel bus (`/dev/rby1_gripper`, on the UPC; built where `RBY1_SDK_PATH` is set); at start it homes each motor to both ends of its travel: the fingers move. On an RB-Y1 v1.3, whose robot model carries the gripper, `model:=false joint_states_topic:=/joint_states` feeds the model's finger joints |
 | `lidar_publisher` | `lidar.launch.py` | The LakiBeam1 2D LiDARs on the mobile base (two, up to four): `/lidar_front_left/scan`, `/lidar_front_right/scan` (`LaserScan`) and each sensor's place on TF (`config/lidar/lidar.yaml`). Run it on the PC the sensors send to (the UPC, 192.168.30.2) |
+| `lidar_merger` | `lidar.launch.py` | With `merge: true` in `lidar.yaml`: all the LiDARs as one 360° scan on the base, `/lidar_merged/scan`, in place of each one's topic |
+| `lidar_calibrate` | `lidar_calibrate.launch.py` | Run once: starts the LiDARs, finds from what they see in common how far off `lidar.yaml` places each against a reference one (x, y, yaw), prints the values to copy in, and stops |
 
 A marker detector is not part of this repository: any node works that publishes each marker as
 `/rby1/marker_<id>/pose` (`geometry_msgs/PoseStamped` in the camera's optical frame) and as TF `target_marker_<id>`;
@@ -395,6 +401,7 @@ ros2 launch rby1_tools gripper.launch.py                       # model on TF + v
 ros2 launch rby1_tools gripper.launch.py scene:=true           # and its parts in the planning scene (needs a move_group)
 ros2 launch rby1_tools gripper.launch.py virtual:=false        # the gripper itself (on the UPC)
 ros2 launch rby1_tools lidar.launch.py                         # the two LiDARs (on the PC they send to)
+ros2 launch rby1_tools lidar_calibrate.launch.py               # once, lidar.launch.py stopped: where they sit
 ros2 topic pub --once /rby1/right_gripper/grasp std_msgs/msg/Bool "{data: true}"         # close
 ros2 topic pub --once /rby1/right_gripper/command std_msgs/msg/Float64 "{data: 0.05}"   # fully open: each finger's opening, m
 ```

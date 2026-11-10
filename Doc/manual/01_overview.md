@@ -1,6 +1,6 @@
 # Overview
 
-[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md)
+[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md) · [UPC Topic Bridge](08_upc_topic_bridge.md)
 
 `rby1_ros2` is the ROS 2 driver of the Rainbow Robotics RB-Y1. It wraps the RB-Y1 C++ SDK in a ROS 2 node — state
 monitoring and every control mode (joint position, Cartesian position, impedance, gravity compensation, command
@@ -46,7 +46,7 @@ what a tool offers is `/rby1/<tool>/<what>`; camera images are not the robot's a
 | `rby1_moveit_{a,m}_{1_0,…}` | MoveIt 2 configuration per model and version (SRDF, kinematics, joint limits, controllers) with `demo.launch.py` | [MoveIt — demo.launch.py](06_moveit.md#demolaunchpy) |
 | `rby1_moveit_executor` | A planner that takes tool pose targets, plans with MoveIt (OMPL) around the planning scene and runs the result through the driver | [MoveIt — Executor](06_moveit.md#executor-rby1_moveit_executor) |
 | `rby1_moveit_objects` | Objects in the planning scene: obstacles (`scene`), modules on the robot (`objects.launch.py`), an obstacle kept where a topic says | [MoveIt — Objects](06_moveit.md#objects-rby1_moveit_objects), [Scene](06_moveit.md#scene) |
-| `rby1_tools` | Camera publishers and their mount, the LiDARs, the gripper (model, planning-scene parts, its driver, virtual or real) | [Tools](07_tools.md) |
+| `rby1_tools` | Camera publishers and their mount, the LiDARs (each on its own or merged on the base, and a check of where they sit), the gripper (model, planning-scene parts, its driver, virtual or real) | [Tools](07_tools.md) |
 | `rby1_bringup` | One launch file that starts the driver and whatever runs with it, by flags | [Bringup](#bringup-rby1_bringup) |
 | `rby1_navigation` | Not finished; not described here | — |
 
@@ -142,7 +142,7 @@ and `build/src` must exist there). Set it in `~/.bashrc` and open a new terminal
 warns `No active joint state from driver`.** Another ROS 2 machine on the same network uses the same
 `ROS_DOMAIN_ID` (0 unless set) — on 2026-10-30 a Jazzy PC running the RB-Y1 MoveIt demo on the LAN: its
 `/controller_manager`, `/joint_states` and Jazzy-only message types reached the Humble nodes here. Give this PC (and
-its containers) a domain of its own, `export ROS_DOMAIN_ID=<1..101>` in `~/.bashrc`, or `ROS_LOCALHOST_ONLY=1` when
+its containers) a domain of its own, e.g. `export ROS_DOMAIN_ID=77` in `~/.bashrc`, or `ROS_LOCALHOST_ONLY=1` when
 everything runs on one PC. `ROS_LOCALHOST_ONLY=1 ros2 topic list --no-daemon` shows what is local; anything that
 appears only without it comes from the network.
 

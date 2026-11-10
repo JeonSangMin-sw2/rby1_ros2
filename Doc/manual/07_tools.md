@@ -1,6 +1,6 @@
 # Tools (`rby1_tools`)
 
-[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md)
+[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md) · [UPC Topic Bridge](08_upc_topic_bridge.md)
 
 What sits on the robot besides the robot: cameras and their place on it, the gripper, and the LiDARs.
 
@@ -230,7 +230,7 @@ The driver, per hand (`<hand>`: `right`, `left`), virtual or real alike:
 
 ### Overview
 
-The RB-Y1's two Richbeam LakiBeam1 2D LiDARs, left and right on the mobile base, as ROS topics. Each sensor sends
+The RB-Y1's Richbeam LakiBeam1 2D LiDARs on the mobile base, two at the front (up to four), as ROS topics. Each sensor sends
 its scan as UDP packets to a host and port it keeps; `lidar_publisher` (one per sensor) listens on that port, turns
 each full turn into a `LaserScan`, and places the sensor on a frame of your choice by static TF. No vendor driver is
 needed.
@@ -239,26 +239,40 @@ Run it on the PC the sensors send to: the UPC (192.168.30.2). The sensors hang o
 network bridge passes their packets on; the front left sensor (192.168.30.10) sends to port 2367, the front right
 one (192.168.30.11) to 2368. Check with `curl http://<sensor_ip>/api/v1/sensor/overview` (its `host`).
 
-![LiDARs: structure and topics](../img/lidar.png)
+With `merge: true` in the settings, `lidar_merger` puts the sensors' scans together on the base as one 360° scan,
+`/lidar_merged/scan`, and the sensors' own topics are no longer published. `lidar_calibrate.launch.py`, run once on
+its own, works out from what the sensors see in common how far off the settings place each one against a reference
+sensor, and prints the `xyz` and `rpy` to copy into the settings.
+
+![LiDARs: scans, merging and calibration](../img/lidar.png)
 
 ```bash
 ros2 launch rby1_tools lidar.launch.py                    # the front pair (type A)
 ros2 launch rby1_tools lidar.launch.py front_right:=false # the front left one only
 ros2 launch rby1_tools lidar.launch.py rear_left:=true rear_right:=true   # four (rear sections uncommented)
 ros2 launch rby1_tools lidar.launch.py config:=/path/my_lidar.yaml
+ros2 launch rby1_tools lidar_calibrate.launch.py          # once: where the sensors sit (lidar.launch.py stopped)
 ```
 
 ### Parameters
 
 | Launch argument | Default | Meaning |
 |---|---|---|
-| `config` | `config/lidar/lidar.yaml` | Settings, one section per sensor (`lidar_front_left`, `lidar_front_right`, …) |
+| `config` | `config/lidar/lidar.yaml` | Settings: `merge` for all, a section per sensor (`lidar_front_left`, `lidar_front_right`, …), and `lidar_merger`, `lidar_calibrate` |
 | `front_left`, `front_right` | `true`, `true` | The front pair (type A: these two) |
 | `rear_left`, `rear_right` | `false`, `false` | The rear pair, on a four-sensor robot; their sections must be uncommented first |
 
-`config/lidar/lidar.yaml`, per sensor. The front pair is set; the rear pair (`lidar_rear_left`,
-`lidar_rear_right`) is there commented out, with placeholder addresses (192.168.30.12, .13), ports (2369, 2370) and
-places (the front pair turned to the rear) — give them the real ones before use.
+`lidar_calibrate.launch.py` takes the same arguments.
+
+`config/lidar/lidar.yaml`, for all its nodes (`/**`):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `merge` | `false` | `false`: each sensor on its own `/<lidar_name>/scan`. `true`: all of them as one scan, `/lidar_merged/scan`, and no topic of each |
+
+Per sensor. The front pair is set; the rear pair (`lidar_rear_left`, `lidar_rear_right`) is there commented out,
+with placeholder addresses (192.168.30.12, .13), ports (2369, 2370) and places (the front pair turned to the
+rear) — give them the real ones before use.
 
 | Setting | Default (front left / front right) | Meaning |
 |---|---|---|
@@ -266,8 +280,26 @@ places (the front pair turned to the rear) — give them the real ones before us
 | `sensor_ip` | `192.168.30.10` / `192.168.30.11` | Packets from anyone else are ignored; `""`: any |
 | `host_ip`, `port` | `0.0.0.0`, `2367` / `2368` | Where this PC listens: the sensor's host port |
 | `parent` | `base` | The frame it is placed on; `""`: no TF |
-| `xyz`, `rpy` | `[0.228, ±0.1765, 0.22282]`, `[0, 0, ±0.959931]` (yaw ±55°) | Its place in `parent` (m, rad). Reference values, not measured on this robot |
+| `xyz`, `rpy` | `[0.2525, ±0.1765, 0.22282]`, `[0, 0, ±0.959931]` (yaw ±55°) | Its place in `parent` (m, rad). Reference values, not measured on this robot |
 | `range_min`, `range_max` | `0.0`, `100.0` m | Written into the `LaserScan` |
+
+`lidar_merger` (used with `merge: true`):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `target_frame` | `base` | The frame the merged scan is on and seen from |
+| `bins` | `1440` | Sectors in 360° (1440: 0.25°, as the sensors) |
+| `range_min`, `range_max` | `0.0`, `100.0` m | From `target_frame`'s origin; nearer or farther points are dropped |
+| `timeout` | `1.0` s | Without a scan from a sensor this long, it warns |
+
+`lidar_calibrate`:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `reference` | `lidar_front_left` | The sensor the others are matched to; its own place stays as set |
+| `scan_pairs` | `20` | Scans matched per sensor; the mean and spread are printed |
+| `timeout` | `15.0` s | To collect them |
+| `max_correction`, `max_correction_deg` | `0.10` m, `5.0`° | Past either, nothing is offered (the settings are wrong, not a little off) |
 
 ### Topics
 
@@ -275,8 +307,15 @@ Per sensor (`<lidar_name>`: `lidar_front_left`, `lidar_front_right`, and the rea
 
 | Topic / frame | Type | Content |
 |---|---|---|
-| `/<lidar_name>/scan` | `sensor_msgs/LaserScan` | One full turn: angle −π at the sensor's azimuth 0, rising with it, one bin per resolution (0.25° at 30 Hz: 1440); `+inf` where there is no return (outside the sensor's scan range, 45°..315° now). Stamped when the turn began |
+| `/<lidar_name>/scan` | `sensor_msgs/LaserScan` | `merge: false`. One full turn: angle −π at the sensor's azimuth 0, rising with it, one bin per resolution (0.25° at 30 Hz: 1440); `+inf` where there is no return (outside the sensor's scan range, 45°..315° now). Stamped when the turn began |
+| `/<lidar_name>/_scan` | `sensor_msgs/LaserScan` | `merge: true`: the same, for `lidar_merger` only; the leading `_` hides it from `ros2 topic list` (`--include-hidden-topics` shows it) |
 | TF `<parent> → <lidar_name>_link` | static | Where the sensor sits: `parent`, `xyz`, `rpy` |
+
+Merged (`merge: true`):
+
+| Topic | Type | Content |
+|---|---|---|
+| `/lidar_merged/scan` | `sensor_msgs/LaserScan` | All the sensors started, in `target_frame` (`base`): 360° from −π in `bins` sectors, each holding its nearest return seen from the frame's origin, `+inf` where none. One per new scan from every sensor (30 Hz), stamped as the newest of them |
 
 ### Tips
 
@@ -284,6 +323,28 @@ Per sensor (`<lidar_name>`: `lidar_front_left`, `lidar_front_right`, and the rea
 
   Measure each sensor on the robot and change `parent`, `xyz`, `rpy`; another `parent` (any frame on TF) places it
   there. A sensor mounted upside down is a roll of π.
+
+- **Calibrating the sensors against each other**
+
+  Stop `lidar.launch.py` (the same ports), keep the robot still where walls in several directions are in view, and
+  run `ros2 launch rby1_tools lidar_calibrate.launch.py` (with `rear_left:=true rear_right:=true` for four). It
+  starts the sensors, matches each one's points to the reference's (point-to-line ICP on the plane), prints the
+  correction (mean ± spread) and the `xyz` / `rpy` for `lidar.yaml`, then stops everything. Copy the values in
+  yourself; no file is changed. Running it again after that should show corrections near 0; then start
+  `lidar.launch.py` again.
+
+  Only x, y and yaw are found; z, roll and pitch stay. The reference sensor's own place is not found this way (the
+  sensors all off together still agree with each other): measure that one. Nothing is offered when the surroundings
+  do not pin all three (a corridor, one wall), when a sensor sees too little in common with the reference, or when
+  the correction is past the limit.
+
+- **Merged scan stops**
+
+  A merged scan waits for a new scan from every sensor started: when one goes quiet, `/lidar_merged/scan` is held
+  and `lidar_merger` warns which one, rather than send a scan with a side missing, which would read as open space.
+  The way of merging (place each sensor's points on the base, keep the nearest per sector) follows the scans merger
+  of [obstacle_detector](https://github.com/tysik/obstacle_detector), ported to ROS 2 in
+  [scan_merger_2](https://github.com/giuschio/scan_merger_2); the code here is its own.
 
 - **No scans**
 

@@ -1,6 +1,6 @@
 # MoveIt (`rby1_moveit_*`, `rby1_moveit_executor`, `rby1_moveit_objects`)
 
-[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md)
+[Overview](01_overview.md) · [Driver](02_driver.md) · [Examples](03_examples.md) · [Description](04_description.md) · [Hardware Interface](05_hardware_interface.md) · [MoveIt](06_moveit.md) · [Tools](07_tools.md) · [UPC Topic Bridge](08_upc_topic_bridge.md)
 
 Two ways to plan with MoveIt 2 on the RB-Y1, and the planning scene they share:
 
