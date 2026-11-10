@@ -324,6 +324,14 @@ Merged (`merge: true`):
   Measure each sensor on the robot and change `parent`, `xyz`, `rpy`; another `parent` (any frame on TF) places it
   there. A sensor mounted upside down is a roll of π.
 
+- **Seeing the scans in RViz**
+
+  Set Fixed Frame to `base`, add TF, and add a LaserScan display per topic: `/lidar_merged/scan` with
+  `merge: true`, or each `/<lidar_name>/scan` with `merge: false`. Walls seen by both sensors should fall on one
+  line; where they show twice, the places in `lidar.yaml` are off (see the next tip).
+
+  ![The front pair in RViz, Fixed Frame base](../img/lidar_rviz.png)
+
 - **Calibrating the sensors against each other**
 
   Stop `lidar.launch.py` (the same ports), keep the robot still where walls in several directions are in view, and
@@ -350,7 +358,11 @@ Merged (`merge: true`):
 
   The node warns when no packets come. Check the sensor answers (`ping`), where it sends
   (`curl http://<sensor_ip>/api/v1/sensor/overview`, `host`), and that its packets reach this PC
-  (`sudo tcpdump -n -i any -c 3 udp and host <sensor_ip>`).
+  (`sudo tcpdump -n -i any -c 3 udp and host <sensor_ip>`). Where `tcpdump` is not installed (the UPC may lack it):
+
+  ```bash
+  sudo apt install tcpdump
+  ```
 
 - **Sensor settings**
 

@@ -100,7 +100,7 @@ EOF
 | `mode`, `listen` | The UPC's bridge waits for the user PC's bridge on TCP 7449 |
 | `scouting` | Off: it does not look for other bridges on the network (the UPC's own on 7447/7448) |
 
-**Run it**, and leave it running:
+**Run it**, and leave it running; Ctrl+C stops it:
 
 ```bash
 cd ~/zenoh_bridge && ROS_DISTRO=humble ./zenoh-bridge-ros2dds -c upc_bridge.json5
@@ -108,6 +108,14 @@ cd ~/zenoh_bridge && ROS_DISTRO=humble ./zenoh-bridge-ros2dds -c upc_bridge.json
 
 It prints `Zenoh can be reached at: tcp/192.168.30.2:7449`, and `Route Publisher (ROS:/… -> …) created` for each
 interface it carries.
+
+**As a command** (optional) — `ros2_bridge` in any new terminal:
+
+```bash
+echo "alias ros2_bridge='ROS_DISTRO=humble ~/zenoh_bridge/zenoh-bridge-ros2dds -c ~/zenoh_bridge/upc_bridge.json5'" >> ~/.bashrc
+source ~/.bashrc
+ros2_bridge
+```
 
 ## 3. User PC: connect to the UPC
 
@@ -118,23 +126,35 @@ echo 'export ROS_DOMAIN_ID=77' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Run the bridge** from its Docker image (the standalone build needs glibc 2.38, newer than Ubuntu 22.04's):
+**Run the bridge** from its Docker image (the standalone build needs glibc 2.38, newer than Ubuntu 22.04's), after
+the UPC's bridge is running — otherwise it stops at once with `Unable to connect`. Leave it running; Ctrl+C stops
+it:
 
 ```bash
-docker run -d --name zenoh_bridge_pc --net host -e ROS_DISTRO=humble -e ROS_DOMAIN_ID \
+docker run --rm -it --init --net host -e ROS_DISTRO=humble -e ROS_DOMAIN_ID \
   eclipse/zenoh-bridge-ros2dds:1.10.2 client -e tcp/<robot_ip>:7449 --no-multicast-scouting
 ```
 
 | Argument | Meaning |
 |---|---|
+| `--rm -it` | Runs in this terminal, and the container is removed when it stops |
+| `--init` | Lets Ctrl+C stop it (without it the bridge, process 1 in the container, ignores Ctrl+C) |
 | `--net host` | The bridge joins the PC's own network, where its ROS 2 nodes are |
 | `-e ROS_DISTRO=humble` | The ROS 2 version of the nodes on this PC |
 | `-e ROS_DOMAIN_ID` | Hands this terminal's `ROS_DOMAIN_ID` to the container (a container does not read `~/.bashrc`) |
 | `client` | The mode (a plain argument in this version, not `-m`) |
 | `-e tcp/<robot_ip>:7449` | The forwarded port of section 1 on the RPC (e.g. `tcp/192.168.1.90:7449`) |
 
-`docker logs zenoh_bridge_pc` shows `New ROS 2 bridge detected` once it reaches the UPC's bridge. Stop it with
-`docker rm -f zenoh_bridge_pc`.
+It prints `New ROS 2 bridge detected` once it reaches the UPC's bridge.
+
+**As a command** (optional) — `ros2_bridge` in any new terminal, with your robot's address in place of
+`<robot_ip>`:
+
+```bash
+echo "alias ros2_bridge='docker run --rm -it --init --net host -e ROS_DISTRO=humble -e ROS_DOMAIN_ID eclipse/zenoh-bridge-ros2dds:1.10.2 client -e tcp/<robot_ip>:7449 --no-multicast-scouting'" >> ~/.bashrc
+source ~/.bashrc
+ros2_bridge
+```
 
 ## 4. Check the connection
 
